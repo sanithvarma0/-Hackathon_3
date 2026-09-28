@@ -1,0 +1,2396 @@
+{
+ "metadata": {
+  "run_id": "20260928-193803-c380d38-quick",
+  "started_at": "2026-09-28T19:38:03+00:00",
+  "git_sha": "c380d38",
+  "git_dirty": true,
+  "seeds": [
+   1
+  ],
+  "incidents_per_unit": 12,
+  "conditions": [
+   "memory_on",
+   "memory_off"
+  ],
+  "parallel": 2,
+  "tool_call_sim_s": 35,
+  "gap_between_incidents_sim_s": [
+   7200,
+   43200
+  ],
+  "llm_primary": "openai:gpt-5.4-mini",
+  "llm_fallback": "groq:openai/gpt-oss-120b",
+  "llm_reasoning_effort": "none",
+  "llm_temperature": 0,
+  "llm_seed": 42,
+  "max_tool_calls": 10,
+  "max_attempts": 3,
+  "verify_window_sim_s": 180,
+  "escalation_penalty_sim_s": 1800,
+  "memory_match_rel_rerank": 0.15,
+  "memory_match_min_rerank": 0.05,
+  "pricing": {
+   "llm": "OpenAI: developers.openai.com/api/docs/pricing, Standard tier, fetched 2026-09-28. Groq: account is on the free plan, so calls cost $0 (tokens still counted).",
+   "hindsight": "Hindsight Cloud billing page, Operation rates, read 2026-09-29."
+  },
+  "python": "3.11.15",
+  "packages": {
+   "openai": "3.19.2",
+   "hindsight-client": "0.10.1",
+   "langgraph": "1.2.12",
+   "langfuse": "4.15.6",
+   "fastapi": "0.141.1"
+  },
+  "finished_at": "2026-09-28T19:41:43+00:00",
+  "wall_clock_s": 220,
+  "failed_units": [],
+  "eval_spend_usd": 0.6756,
+  "units_completed": 2
+ },
+ "summary": {
+  "rows": 24,
+  "errors": 0,
+  "seeds": [
+   1
+  ],
+  "expected_units": 2,
+  "by_exposure": {
+   "accuracy": {
+    "1st": {
+     "memory_on": {
+      "mean": 1.0,
+      "lo": 1.0,
+      "hi": 1.0,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 1.0,
+      "lo": 1.0,
+      "hi": 1.0,
+      "n": 4
+     },
+     "diff": {
+      "mean": 0.0,
+      "lo": 0.0,
+      "hi": 0.0,
+      "n": 4
+     }
+    },
+    "2nd": {
+     "memory_on": {
+      "mean": 1.0,
+      "lo": 1.0,
+      "hi": 1.0,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 1.0,
+      "lo": 1.0,
+      "hi": 1.0,
+      "n": 4
+     },
+     "diff": {
+      "mean": 0.0,
+      "lo": 0.0,
+      "hi": 0.0,
+      "n": 4
+     }
+    },
+    "3rd+": {
+     "memory_on": {
+      "mean": 1.0,
+      "lo": 1.0,
+      "hi": 1.0,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 1.0,
+      "lo": 1.0,
+      "hi": 1.0,
+      "n": 4
+     },
+     "diff": {
+      "mean": 0.0,
+      "lo": 0.0,
+      "hi": 0.0,
+      "n": 4
+     }
+    }
+   },
+   "mttr_min": {
+    "1st": {
+     "memory_on": {
+      "mean": 10.666666666666668,
+      "lo": 9.541666666666668,
+      "hi": 11.791666666666668,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 10.875,
+      "lo": 9.541666666666668,
+      "hi": 12.208333333333334,
+      "n": 4
+     },
+     "diff": {
+      "mean": -0.20833333333333348,
+      "lo": -0.43750000000000044,
+      "hi": 0.0,
+      "n": 4
+     }
+    },
+    "2nd": {
+     "memory_on": {
+      "mean": 10.833333333333332,
+      "lo": 9.166666666666666,
+      "hi": 12.25,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 10.562499999999998,
+      "lo": 9.041666666666666,
+      "hi": 12.083333333333332,
+      "n": 4
+     },
+     "diff": {
+      "mean": 0.2708333333333335,
+      "lo": 0.0,
+      "hi": 0.8125000000000004,
+      "n": 4
+     }
+    },
+    "3rd+": {
+     "memory_on": {
+      "mean": 10.104166666666668,
+      "lo": 8.583333333333334,
+      "hi": 11.104166666666668,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 10.208333333333334,
+      "lo": 9.020833333333332,
+      "hi": 11.083333333333334,
+      "n": 4
+     },
+     "diff": {
+      "mean": -0.10416666666666674,
+      "lo": -0.5000000000000004,
+      "hi": 0.3333333333333335,
+      "n": 4
+     }
+    }
+   },
+   "tool_calls": {
+    "1st": {
+     "memory_on": {
+      "mean": 9.0,
+      "lo": 8.25,
+      "hi": 9.75,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 9.5,
+      "lo": 9.0,
+      "hi": 10.0,
+      "n": 4
+     },
+     "diff": {
+      "mean": -0.5,
+      "lo": -1.0,
+      "hi": 0.0,
+      "n": 4
+     }
+    },
+    "2nd": {
+     "memory_on": {
+      "mean": 9.0,
+      "lo": 9.0,
+      "hi": 9.0,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 8.75,
+      "lo": 8.25,
+      "hi": 9.0,
+      "n": 4
+     },
+     "diff": {
+      "mean": 0.25,
+      "lo": 0.0,
+      "hi": 0.75,
+      "n": 4
+     }
+    },
+    "3rd+": {
+     "memory_on": {
+      "mean": 8.75,
+      "lo": 8.0,
+      "hi": 9.5,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 9.0,
+      "lo": 7.75,
+      "hi": 10.0,
+      "n": 4
+     },
+     "diff": {
+      "mean": -0.25,
+      "lo": -1.0,
+      "hi": 0.5,
+      "n": 4
+     }
+    }
+   },
+   "first_attempt_tool_calls": {
+    "1st": {
+     "memory_on": {
+      "mean": 9.0,
+      "lo": 8.25,
+      "hi": 9.75,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 9.5,
+      "lo": 9.0,
+      "hi": 10.0,
+      "n": 4
+     },
+     "diff": {
+      "mean": -0.5,
+      "lo": -1.0,
+      "hi": 0.0,
+      "n": 4
+     }
+    },
+    "2nd": {
+     "memory_on": {
+      "mean": 9.0,
+      "lo": 9.0,
+      "hi": 9.0,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 8.75,
+      "lo": 8.25,
+      "hi": 9.0,
+      "n": 4
+     },
+     "diff": {
+      "mean": 0.25,
+      "lo": 0.0,
+      "hi": 0.75,
+      "n": 4
+     }
+    },
+    "3rd+": {
+     "memory_on": {
+      "mean": 8.75,
+      "lo": 8.0,
+      "hi": 9.5,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 9.0,
+      "lo": 7.75,
+      "hi": 10.0,
+      "n": 4
+     },
+     "diff": {
+      "mean": -0.25,
+      "lo": -1.0,
+      "hi": 0.5,
+      "n": 4
+     }
+    }
+   },
+   "confidence": {
+    "1st": {
+     "memory_on": {
+      "mean": 0.965,
+      "lo": 0.955,
+      "hi": 0.975,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 0.945,
+      "lo": 0.8899999999999999,
+      "hi": 0.98,
+      "n": 4
+     },
+     "diff": {
+      "mean": 0.01999999999999999,
+      "lo": -0.007500000000000007,
+      "hi": 0.06749999999999998,
+      "n": 4
+     }
+    },
+    "2nd": {
+     "memory_on": {
+      "mean": 0.9774999999999999,
+      "lo": 0.9724999999999999,
+      "hi": 0.98,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 0.945,
+      "lo": 0.8899999999999999,
+      "hi": 0.98,
+      "n": 4
+     },
+     "diff": {
+      "mean": 0.0325,
+      "lo": 0.0,
+      "hi": 0.08249999999999999,
+      "n": 4
+     }
+    },
+    "3rd+": {
+     "memory_on": {
+      "mean": 0.975,
+      "lo": 0.965,
+      "hi": 0.98,
+      "n": 4
+     },
+     "memory_off": {
+      "mean": 0.9625,
+      "lo": 0.9400000000000001,
+      "hi": 0.9774999999999999,
+      "n": 4
+     },
+     "diff": {
+      "mean": 0.012499999999999983,
+      "lo": 0.0025000000000000022,
+      "hi": 0.02499999999999994,
+      "n": 4
+     }
+    }
+   }
+  },
+  "per_class": {
+   "config_regression": {
+    "accuracy": {
+     "1st": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     }
+    },
+    "mttr_min": {
+     "1st": {
+      "memory_on": {
+       "mean": 10.083333333333334,
+       "lo": 10.083333333333334,
+       "hi": 10.083333333333334,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 10.083333333333334,
+       "lo": 10.083333333333334,
+       "hi": 10.083333333333334,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 11.416666666666666,
+       "lo": 11.416666666666666,
+       "hi": 11.416666666666666,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 11.416666666666666,
+       "lo": 11.416666666666666,
+       "hi": 11.416666666666666,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 10.416666666666666,
+       "lo": 10.416666666666666,
+       "hi": 10.416666666666666,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 10.833333333333334,
+       "lo": 10.833333333333334,
+       "hi": 10.833333333333334,
+       "n": 1
+      }
+     }
+    },
+    "tool_calls": {
+     "1st": {
+      "memory_on": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 10.0,
+       "lo": 10.0,
+       "hi": 10.0,
+       "n": 1
+      }
+     }
+    }
+   },
+   "sensor_drift": {
+    "accuracy": {
+     "1st": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     }
+    },
+    "mttr_min": {
+     "1st": {
+      "memory_on": {
+       "mean": 11.583333333333334,
+       "lo": 11.583333333333334,
+       "hi": 11.583333333333334,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 11.833333333333334,
+       "lo": 11.833333333333334,
+       "hi": 11.833333333333334,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 12.75,
+       "lo": 12.75,
+       "hi": 12.75,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 12.75,
+       "lo": 12.75,
+       "hi": 12.75,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 11.333333333333334,
+       "lo": 11.333333333333334,
+       "hi": 11.333333333333334,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 11.333333333333334,
+       "lo": 11.333333333333334,
+       "hi": 11.333333333333334,
+       "n": 1
+      }
+     }
+    },
+    "tool_calls": {
+     "1st": {
+      "memory_on": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 10.0,
+       "lo": 10.0,
+       "hi": 10.0,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 10.0,
+       "lo": 10.0,
+       "hi": 10.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 10.0,
+       "lo": 10.0,
+       "hi": 10.0,
+       "n": 1
+      }
+     }
+    }
+   },
+   "network_failure": {
+    "accuracy": {
+     "1st": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     }
+    },
+    "mttr_min": {
+     "1st": {
+      "memory_on": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 8.416666666666666,
+       "lo": 8.416666666666666,
+       "hi": 8.416666666666666,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 8.416666666666666,
+       "lo": 8.416666666666666,
+       "hi": 8.416666666666666,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 7.833333333333333,
+       "lo": 7.833333333333333,
+       "hi": 7.833333333333333,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 8.416666666666666,
+       "lo": 8.416666666666666,
+       "hi": 8.416666666666666,
+       "n": 1
+      }
+     }
+    },
+    "tool_calls": {
+     "1st": {
+      "memory_on": {
+       "mean": 10.0,
+       "lo": 10.0,
+       "hi": 10.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 10.0,
+       "lo": 10.0,
+       "hi": 10.0,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 8.0,
+       "lo": 8.0,
+       "hi": 8.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      }
+     }
+    }
+   },
+   "resource_exhaustion": {
+    "accuracy": {
+     "1st": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 1.0,
+       "lo": 1.0,
+       "hi": 1.0,
+       "n": 1
+      }
+     }
+    },
+    "mttr_min": {
+     "1st": {
+      "memory_on": {
+       "mean": 12.0,
+       "lo": 12.0,
+       "hi": 12.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 12.583333333333334,
+       "lo": 12.583333333333334,
+       "hi": 12.583333333333334,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 10.75,
+       "lo": 10.75,
+       "hi": 10.75,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 9.666666666666666,
+       "lo": 9.666666666666666,
+       "hi": 9.666666666666666,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 10.833333333333334,
+       "lo": 10.833333333333334,
+       "hi": 10.833333333333334,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 10.25,
+       "lo": 10.25,
+       "hi": 10.25,
+       "n": 1
+      }
+     }
+    },
+    "tool_calls": {
+     "1st": {
+      "memory_on": {
+       "mean": 8.0,
+       "lo": 8.0,
+       "hi": 8.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      }
+     },
+     "2nd": {
+      "memory_on": {
+       "mean": 9.0,
+       "lo": 9.0,
+       "hi": 9.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 8.0,
+       "lo": 8.0,
+       "hi": 8.0,
+       "n": 1
+      }
+     },
+     "3rd+": {
+      "memory_on": {
+       "mean": 8.0,
+       "lo": 8.0,
+       "hi": 8.0,
+       "n": 1
+      },
+      "memory_off": {
+       "mean": 7.0,
+       "lo": 7.0,
+       "hi": 7.0,
+       "n": 1
+      }
+     }
+    }
+   }
+  },
+  "paired_overall": {
+   "accuracy": {
+    "mean": 0.0,
+    "lo": 0.0,
+    "hi": 0.0,
+    "n": 12
+   },
+   "mttr_min": {
+    "mean": -0.013888888888888914,
+    "lo": -0.25000000000000006,
+    "hi": 0.24305555555555566,
+    "n": 12
+   },
+   "tool_calls": {
+    "mean": -0.16666666666666666,
+    "lo": -0.5,
+    "hi": 0.25,
+    "n": 12
+   },
+   "first_attempt_tool_calls": {
+    "mean": -0.16666666666666666,
+    "lo": -0.5,
+    "hi": 0.25,
+    "n": 12
+   },
+   "confidence": {
+    "mean": 0.021666666666666657,
+    "lo": 0.004166666666666652,
+    "hi": 0.04499999999999999,
+    "n": 12
+   }
+  },
+  "transfer": {
+   "memory_on": {
+    "mean": 1.0,
+    "lo": 0.5101091635454027,
+    "hi": 1.0,
+    "n": 4
+   },
+   "memory_off": {
+    "mean": 1.0,
+    "lo": 0.5101091635454027,
+    "hi": 1.0,
+    "n": 4
+   },
+   "same_class_rank": {
+    "found": 4,
+    "n": 4,
+    "mean_rank": 1.0
+   }
+  },
+  "discrimination": {
+   "memory_on": {
+    "probes": {
+     "k": 0,
+     "n": 11
+    },
+    "rate": {
+     "mean": 0.0,
+     "lo": 0.0,
+     "hi": 0.2588329669680317,
+     "n": 11
+    },
+    "sensor_after_config": {
+     "k": 0,
+     "n": 3
+    }
+   },
+   "memory_off": {
+    "probes": {
+     "k": 0,
+     "n": 11
+    },
+    "rate": {
+     "mean": 0.0,
+     "lo": 0.0,
+     "hi": 0.2588329669680317,
+     "n": 11
+    },
+    "sensor_after_config": {
+     "k": 0,
+     "n": 3
+    }
+   }
+  },
+  "retrieval": {
+   "recall_at_1": {
+    "mean": 1.0,
+    "lo": 0.6755924351161198,
+    "hi": 1.0,
+    "n": 8
+   },
+   "gate_precision": {
+    "mean": 0.6666666666666666,
+    "lo": 0.43749467295945105,
+    "hi": 0.837212252491663,
+    "n": 18
+   },
+   "strong_precision": {
+    "mean": 0.8333333333333334,
+    "lo": 0.5519691377470266,
+    "hi": 0.9530348578161463,
+    "n": 12
+   },
+   "mean_matches": 1.5,
+   "matched_without_same_class_prior": {
+    "k": 1,
+    "n": 4
+   }
+  },
+  "calibration": {
+   "memory_on": {
+    "brier": 0.000858333333333335,
+    "bins": [
+     {
+      "lo": 0,
+      "hi": 0.5,
+      "n": 0,
+      "mean_confidence": null,
+      "accuracy": null
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.7,
+      "n": 0,
+      "mean_confidence": null,
+      "accuracy": null
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.85,
+      "n": 0,
+      "mean_confidence": null,
+      "accuracy": null
+     },
+     {
+      "lo": 0.85,
+      "hi": 0.95,
+      "n": 0,
+      "mean_confidence": null,
+      "accuracy": null
+     },
+     {
+      "lo": 0.95,
+      "hi": 1.0,
+      "n": 12,
+      "mean_confidence": 0.9725000000000001,
+      "accuracy": 1.0
+     }
+    ]
+   },
+   "memory_off": {
+    "brier": 0.0042583333333333345,
+    "bins": [
+     {
+      "lo": 0,
+      "hi": 0.5,
+      "n": 0,
+      "mean_confidence": null,
+      "accuracy": null
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.7,
+      "n": 0,
+      "mean_confidence": null,
+      "accuracy": null
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.85,
+      "n": 0,
+      "mean_confidence": null,
+      "accuracy": null
+     },
+     {
+      "lo": 0.85,
+      "hi": 0.95,
+      "n": 3,
+      "mean_confidence": 0.8833333333333333,
+      "accuracy": 1.0
+     },
+     {
+      "lo": 0.95,
+      "hi": 1.0,
+      "n": 9,
+      "mean_confidence": 0.9733333333333333,
+      "accuracy": 1.0
+     }
+    ]
+   }
+  },
+  "cost": {
+   "memory_on": {
+    "llm_tokens": 12548.083333333334,
+    "cost_usd": 0.009259000000000002,
+    "hindsight_billed_tokens": 4226.583333333333,
+    "hindsight_cost_usd": 0.020103,
+    "runbook_refreshes": 0.25,
+    "agent_time_real_s": 14.658333333333331
+   },
+   "memory_off": {
+    "llm_tokens": 10592.0,
+    "cost_usd": 0.00941725,
+    "hindsight_billed_tokens": 502.4166666666667,
+    "hindsight_cost_usd": 0.01752416666666667,
+    "runbook_refreshes": 0.25,
+    "agent_time_real_s": 13.166666666666666
+   }
+  },
+  "totals": {
+   "llm_usd": 0.22411499999999995,
+   "hindsight_usd": 0.4515260000000001,
+   "llm_tokens": 277681,
+   "incidents": 24
+  },
+  "mttr_drivers": {
+   "memory_on": {
+    "1st": {
+     "attempts": 1.0,
+     "wrong_first_fix": 0,
+     "escalated": 0,
+     "n": 4
+    },
+    "2nd": {
+     "attempts": 1.0,
+     "wrong_first_fix": 0,
+     "escalated": 0,
+     "n": 4
+    },
+    "3rd+": {
+     "attempts": 1.0,
+     "wrong_first_fix": 0,
+     "escalated": 0,
+     "n": 4
+    }
+   },
+   "memory_off": {
+    "1st": {
+     "attempts": 1.0,
+     "wrong_first_fix": 0,
+     "escalated": 0,
+     "n": 4
+    },
+    "2nd": {
+     "attempts": 1.0,
+     "wrong_first_fix": 0,
+     "escalated": 0,
+     "n": 4
+    },
+    "3rd+": {
+     "attempts": 1.0,
+     "wrong_first_fix": 0,
+     "escalated": 0,
+     "n": 4
+    }
+   }
+  },
+  "per_seed_accuracy": {
+   "memory_on": {
+    "1": 1.0
+   },
+   "memory_off": {
+    "1": 1.0
+   }
+  },
+  "failures": [],
+  "targets": [
+   {
+    "id": "1",
+    "target": "Memory ON, 3rd+ exposure: recommendation accuracy higher than OFF (paired 95% CI excludes 0)",
+    "status": "FAIL",
+    "evidence": "+0% [+0%, +0%] (n=4)"
+   },
+   {
+    "id": "2",
+    "target": "Memory ON, 3rd+ exposure: tool calls and MTTR lower than OFF (paired 95% CIs exclude 0)",
+    "status": "FAIL",
+    "evidence": "tool calls -0.2 [-1.0, +0.5] (n=4); MTTR -0.1 min [-0.5, +0.3] (n=4)"
+   },
+   {
+    "id": "3",
+    "target": "Memory OFF: no significant trend from 1st to 3rd+ exposure (the gain is memory, not drift)",
+    "status": "PASS",
+    "evidence": "accuracy +0% [+0%, +0%] (n=8); tool_calls -0.5 [-2.0, +0.8] (n=8)"
+   },
+   {
+    "id": "4",
+    "target": "Discrimination: false replays \u2264 1 per 15 probes (memory ON)",
+    "status": "PASS",
+    "evidence": "0 / 11 probes (0.0%)"
+   },
+   {
+    "id": "5",
+    "target": "Retrieval: recall@1 \u2265 0.8 when a same-class prior exists",
+    "status": "PASS",
+    "evidence": "100% [68%\u2013100%] (n=8)"
+   }
+  ]
+ },
+ "rows": [
+  {
+   "incident_id": "INC-001",
+   "ts": 1790624305.626407,
+   "true_type": "resource_exhaustion",
+   "diagnosis": "local controller memory pressure",
+   "machine_id": "M3",
+   "memory_enabled": 0,
+   "exposure": 1,
+   "status": "resolved",
+   "mttr_sim_s": 755,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 12.36,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 1.0,
+   "llm_confidence": 0.96,
+   "calibrated_confidence": 0.96,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 10533,
+   "cost_usd": 0.008458,
+   "hindsight_billed_tokens": 500,
+   "hindsight_cost_usd": 0.055,
+   "runbook_refreshes": 1,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 1,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": false,
+   "prior_other_class": false,
+   "matches": [],
+   "first_recommendation": "CLEAR_CACHE",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/44ce7e270bd8d5a195d74dbcf5922166",
+   "error": null
+  },
+  {
+   "incident_id": "INC-001",
+   "ts": 1790624305.71597,
+   "true_type": "resource_exhaustion",
+   "diagnosis": "local controller memory exhaustion",
+   "machine_id": "M3",
+   "memory_enabled": 1,
+   "exposure": 1,
+   "status": "resolved",
+   "mttr_sim_s": 720,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 11.67,
+   "tool_calls": 8,
+   "first_attempt_tool_calls": 8,
+   "attempts": 1,
+   "investigation_efficiency": 0.875,
+   "llm_confidence": 0.96,
+   "calibrated_confidence": 0.96,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 7990,
+   "cost_usd": 0.007029,
+   "hindsight_billed_tokens": 492,
+   "hindsight_cost_usd": 0.054862,
+   "runbook_refreshes": 1,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 1,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": false,
+   "prior_other_class": false,
+   "matches": [],
+   "first_recommendation": "CLEAR_CACHE",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/84476e723a6c2e750dba215969b0160d",
+   "error": null
+  },
+  {
+   "incident_id": "INC-002",
+   "ts": 1790624325.8748934,
+   "true_type": "config_regression",
+   "diagnosis": "bad config deploy causing control instability",
+   "machine_id": "M1",
+   "memory_enabled": 0,
+   "exposure": 1,
+   "status": "resolved",
+   "mttr_sim_s": 605,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 20.09,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.778,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 10627,
+   "cost_usd": 0.008375,
+   "hindsight_billed_tokens": 484,
+   "hindsight_cost_usd": 0.00484,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 2,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": false,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "ROLLBACK_CONFIG",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/62a298066e1b6a8f2bdeec05913b9816",
+   "error": null
+  },
+  {
+   "incident_id": "INC-002",
+   "ts": 1790624328.64028,
+   "true_type": "config_regression",
+   "diagnosis": "post-deploy control instability",
+   "machine_id": "M1",
+   "memory_enabled": 1,
+   "exposure": 1,
+   "status": "resolved",
+   "mttr_sim_s": 605,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 22.77,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.889,
+   "llm_confidence": 0.97,
+   "calibrated_confidence": 0.97,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 11376,
+   "cost_usd": 0.008234,
+   "hindsight_billed_tokens": 1081,
+   "hindsight_cost_usd": 0.005433,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 2,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": false,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "ROLLBACK_CONFIG",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/99cc8ec0a351448c10fa4883370bfd51",
+   "error": null
+  },
+  {
+   "incident_id": "INC-003",
+   "ts": 1790624337.3966827,
+   "true_type": "sensor_drift",
+   "diagnosis": "localized thermal sensor drift/fault",
+   "machine_id": "M2",
+   "memory_enabled": 0,
+   "exposure": 1,
+   "status": "resolved",
+   "mttr_sim_s": 710,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 11.3,
+   "tool_calls": 10,
+   "first_attempt_tool_calls": 10,
+   "attempts": 1,
+   "investigation_efficiency": 0.6,
+   "llm_confidence": 0.86,
+   "calibrated_confidence": 0.86,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 10519,
+   "cost_usd": 0.010063,
+   "hindsight_billed_tokens": 520,
+   "hindsight_cost_usd": 0.0052,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 3,
+   "held_out": false,
+   "after_config_regression": true,
+   "prior_same_class": false,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "RECALIBRATE_SENSOR",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/6ffdc7153b868ba1a66040cdf2286760",
+   "error": null
+  },
+  {
+   "incident_id": "INC-003",
+   "ts": 1790624341.5133166,
+   "true_type": "sensor_drift",
+   "diagnosis": "local sensor drift and probe repeatability fault",
+   "machine_id": "M2",
+   "memory_enabled": 1,
+   "exposure": 1,
+   "status": "resolved",
+   "mttr_sim_s": 695,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 12.66,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.889,
+   "llm_confidence": 0.95,
+   "calibrated_confidence": 0.95,
+   "memory_hit": 1,
+   "top_match_same_class": 0,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 12151,
+   "cost_usd": 0.008763,
+   "hindsight_billed_tokens": 1857,
+   "hindsight_cost_usd": 0.005959,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 3,
+   "held_out": false,
+   "after_config_regression": true,
+   "prior_same_class": false,
+   "prior_other_class": true,
+   "matches": [
+    {
+     "incident_id": "INC-002",
+     "type": "config_regression",
+     "rank": 1,
+     "rerank": 0.0595,
+     "strength": "strong"
+    }
+   ],
+   "first_recommendation": "RECALIBRATE_SENSOR",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/275a15009f90b6938a2388699acbbb9e",
+   "error": null
+  },
+  {
+   "incident_id": "INC-004",
+   "ts": 1790624351.4832754,
+   "true_type": "network_failure",
+   "diagnosis": "GW-A uplink disturbance",
+   "machine_id": "M1",
+   "memory_enabled": 0,
+   "exposure": 1,
+   "status": "resolved",
+   "mttr_sim_s": 540,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 11.44,
+   "tool_calls": 10,
+   "first_attempt_tool_calls": 10,
+   "attempts": 1,
+   "investigation_efficiency": 0.8,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 10831,
+   "cost_usd": 0.010394,
+   "hindsight_billed_tokens": 514,
+   "hindsight_cost_usd": 0.00514,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 4,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": false,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "RESTART_GATEWAY",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/4c79b9c2715ecaebe8b30d39f79fa7b4",
+   "error": null
+  },
+  {
+   "incident_id": "INC-004",
+   "ts": 1790624356.6094136,
+   "true_type": "network_failure",
+   "diagnosis": "gateway uplink flap causing shared network disruption",
+   "machine_id": "M1",
+   "memory_enabled": 1,
+   "exposure": 1,
+   "status": "resolved",
+   "mttr_sim_s": 540,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 14.89,
+   "tool_calls": 10,
+   "first_attempt_tool_calls": 10,
+   "attempts": 1,
+   "investigation_efficiency": 0.5,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 11768,
+   "cost_usd": 0.010181,
+   "hindsight_billed_tokens": 2684,
+   "hindsight_cost_usd": 0.006358,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 4,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": false,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "RESTART_GATEWAY",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/b776ba97a08ddb5a84e71cbade85a621",
+   "error": null
+  },
+  {
+   "incident_id": "INC-005",
+   "ts": 1790624363.530422,
+   "true_type": "config_regression",
+   "diagnosis": "bad config deploy",
+   "machine_id": "M2",
+   "memory_enabled": 0,
+   "exposure": 2,
+   "status": "resolved",
+   "mttr_sim_s": 685,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 11.92,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.333,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 11747,
+   "cost_usd": 0.009373,
+   "hindsight_billed_tokens": 521,
+   "hindsight_cost_usd": 0.05521,
+   "runbook_refreshes": 1,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 5,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "ROLLBACK_CONFIG",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/3953c87bed5b14f2a91bad641748a2d0",
+   "error": null
+  },
+  {
+   "incident_id": "INC-005",
+   "ts": 1790624369.594519,
+   "true_type": "config_regression",
+   "diagnosis": "post-deploy control instability",
+   "machine_id": "M2",
+   "memory_enabled": 1,
+   "exposure": 2,
+   "status": "resolved",
+   "mttr_sim_s": 685,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 12.85,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.889,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 1,
+   "top_match_same_class": 1,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 13001,
+   "cost_usd": 0.009306,
+   "hindsight_billed_tokens": 3420,
+   "hindsight_cost_usd": 0.057649,
+   "runbook_refreshes": 1,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 5,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [
+    {
+     "incident_id": "INC-002",
+     "type": "config_regression",
+     "rank": 1,
+     "rerank": 0.8758,
+     "strength": "strong"
+    },
+    {
+     "incident_id": "INC-004",
+     "type": "network_failure",
+     "rank": 2,
+     "rerank": 0.1842,
+     "strength": "weak"
+    }
+   ],
+   "first_recommendation": "ROLLBACK_CONFIG",
+   "cited": [
+    "INC-002"
+   ],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/da7db9382208d3984c02e4cc347ad2f0",
+   "error": null
+  },
+  {
+   "incident_id": "INC-006",
+   "ts": 1790624374.6421783,
+   "true_type": "sensor_drift",
+   "diagnosis": "local thermal/probe instability",
+   "machine_id": "M1",
+   "memory_enabled": 0,
+   "exposure": 2,
+   "status": "resolved",
+   "mttr_sim_s": 765,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 10.84,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.667,
+   "llm_confidence": 0.86,
+   "calibrated_confidence": 0.86,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 11424,
+   "cost_usd": 0.009055,
+   "hindsight_billed_tokens": 515,
+   "hindsight_cost_usd": 0.00515,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 6,
+   "held_out": false,
+   "after_config_regression": true,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "RECALIBRATE_SENSOR",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/9f0994bc2347f85b083aff023e60f36d",
+   "error": null
+  },
+  {
+   "incident_id": "INC-007",
+   "ts": 1790624385.580155,
+   "true_type": "network_failure",
+   "diagnosis": "gateway uplink disruption",
+   "machine_id": "M3",
+   "memory_enabled": 0,
+   "exposure": 2,
+   "status": "resolved",
+   "mttr_sim_s": 505,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 10.58,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.889,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 8658,
+   "cost_usd": 0.008566,
+   "hindsight_billed_tokens": 492,
+   "hindsight_cost_usd": 0.00492,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 7,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "RESTART_GATEWAY",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/b3ccfd09fcda2c087e90fe26b460dae4",
+   "error": null
+  },
+  {
+   "incident_id": "INC-006",
+   "ts": 1790624386.6548948,
+   "true_type": "sensor_drift",
+   "diagnosis": "local sensor drift / probe repeatability fault",
+   "machine_id": "M1",
+   "memory_enabled": 1,
+   "exposure": 2,
+   "status": "resolved",
+   "mttr_sim_s": 765,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 16.8,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.778,
+   "llm_confidence": 0.97,
+   "calibrated_confidence": 0.97,
+   "memory_hit": 1,
+   "top_match_same_class": 1,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 10670,
+   "cost_usd": 0.008254,
+   "hindsight_billed_tokens": 4501,
+   "hindsight_cost_usd": 0.007489,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 6,
+   "held_out": false,
+   "after_config_regression": true,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [
+    {
+     "incident_id": "INC-003",
+     "type": "sensor_drift",
+     "rank": 1,
+     "rerank": 0.9604,
+     "strength": "strong"
+    }
+   ],
+   "first_recommendation": "RECALIBRATE_SENSOR",
+   "cited": [
+    "INC-003"
+   ],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/6fe3dc548ac5aad5ee6a194d1da3fcf1",
+   "error": null
+  },
+  {
+   "incident_id": "INC-008",
+   "ts": 1790624396.873366,
+   "true_type": "resource_exhaustion",
+   "diagnosis": "local controller memory pressure",
+   "machine_id": "M1",
+   "memory_enabled": 0,
+   "exposure": 2,
+   "status": "resolved",
+   "mttr_sim_s": 580,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 10.82,
+   "tool_calls": 8,
+   "first_attempt_tool_calls": 8,
+   "attempts": 1,
+   "investigation_efficiency": 0.75,
+   "llm_confidence": 0.96,
+   "calibrated_confidence": 0.96,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 10296,
+   "cost_usd": 0.008048,
+   "hindsight_billed_tokens": 462,
+   "hindsight_cost_usd": 0.00462,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 8,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "CLEAR_CACHE",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/9c4c6b883eb04845fe0424e09c05f143",
+   "error": null
+  },
+  {
+   "incident_id": "INC-007",
+   "ts": 1790624398.0665965,
+   "true_type": "network_failure",
+   "diagnosis": "shared gateway network disruption",
+   "machine_id": "M3",
+   "memory_enabled": 1,
+   "exposure": 2,
+   "status": "resolved",
+   "mttr_sim_s": 505,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 11.01,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.444,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 1,
+   "top_match_same_class": 1,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 14681,
+   "cost_usd": 0.011765,
+   "hindsight_billed_tokens": 5015,
+   "hindsight_cost_usd": 0.008512,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 7,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [
+    {
+     "incident_id": "INC-004",
+     "type": "network_failure",
+     "rank": 1,
+     "rerank": 0.7087,
+     "strength": "strong"
+    },
+    {
+     "incident_id": "INC-001",
+     "type": "resource_exhaustion",
+     "rank": 2,
+     "rerank": 0.2104,
+     "strength": "weak"
+    }
+   ],
+   "first_recommendation": "RESTART_GATEWAY",
+   "cited": [
+    "INC-004"
+   ],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/5572883a25911d57cfcb111b632c59b9",
+   "error": null
+  },
+  {
+   "incident_id": "INC-008",
+   "ts": 1790624414.411785,
+   "true_type": "resource_exhaustion",
+   "diagnosis": "local controller memory exhaustion",
+   "machine_id": "M1",
+   "memory_enabled": 1,
+   "exposure": 2,
+   "status": "resolved",
+   "mttr_sim_s": 645,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 15.95,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.778,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 1,
+   "top_match_same_class": 1,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 13556,
+   "cost_usd": 0.008724,
+   "hindsight_billed_tokens": 5407,
+   "hindsight_cost_usd": 0.008205,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 8,
+   "held_out": false,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [
+    {
+     "incident_id": "INC-001",
+     "type": "resource_exhaustion",
+     "rank": 1,
+     "rerank": 0.3508,
+     "strength": "strong"
+    },
+    {
+     "incident_id": "INC-002",
+     "type": "config_regression",
+     "rank": 2,
+     "rerank": 0.2811,
+     "strength": "strong"
+    },
+    {
+     "incident_id": "INC-005",
+     "type": "config_regression",
+     "rank": 3,
+     "rerank": 0.0644,
+     "strength": "weak"
+    }
+   ],
+   "first_recommendation": "CLEAR_CACHE",
+   "cited": [
+    "INC-001"
+   ],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/04617081660455598e55e8a93f49372d",
+   "error": null
+  },
+  {
+   "incident_id": "INC-009",
+   "ts": 1790624415.6881313,
+   "true_type": "config_regression",
+   "diagnosis": "config regression after deploy",
+   "machine_id": "M4",
+   "memory_enabled": 0,
+   "exposure": 3,
+   "status": "resolved",
+   "mttr_sim_s": 650,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 18.54,
+   "tool_calls": 10,
+   "first_attempt_tool_calls": 10,
+   "attempts": 1,
+   "investigation_efficiency": 0.8,
+   "llm_confidence": 0.97,
+   "calibrated_confidence": 0.97,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 11745,
+   "cost_usd": 0.011816,
+   "hindsight_billed_tokens": 518,
+   "hindsight_cost_usd": 0.00518,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 9,
+   "held_out": true,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "ROLLBACK_CONFIG",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/dc61d8854da895bb7c9ba5d6b1104b5c",
+   "error": null
+  },
+  {
+   "incident_id": "INC-009",
+   "ts": 1790624426.9656615,
+   "true_type": "config_regression",
+   "diagnosis": "post-deploy control instability",
+   "machine_id": "M4",
+   "memory_enabled": 1,
+   "exposure": 3,
+   "status": "resolved",
+   "mttr_sim_s": 625,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 12.29,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.556,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 1,
+   "top_match_same_class": 1,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 13381,
+   "cost_usd": 0.008532,
+   "hindsight_billed_tokens": 5844,
+   "hindsight_cost_usd": 0.008385,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 9,
+   "held_out": true,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [
+    {
+     "incident_id": "INC-002",
+     "type": "config_regression",
+     "rank": 1,
+     "rerank": 0.9247,
+     "strength": "strong"
+    },
+    {
+     "incident_id": "INC-005",
+     "type": "config_regression",
+     "rank": 2,
+     "rerank": 0.8858,
+     "strength": "strong"
+    }
+   ],
+   "first_recommendation": "ROLLBACK_CONFIG",
+   "cited": [
+    "INC-002",
+    "INC-005"
+   ],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/c33dd9687ee1073f868c435904d1f927",
+   "error": null
+  },
+  {
+   "incident_id": "INC-010",
+   "ts": 1790624428.8732293,
+   "true_type": "sensor_drift",
+   "diagnosis": "localized thermal/vision calibration fault",
+   "machine_id": "M5",
+   "memory_enabled": 0,
+   "exposure": 3,
+   "status": "resolved",
+   "mttr_sim_s": 680,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 12.96,
+   "tool_calls": 10,
+   "first_attempt_tool_calls": 10,
+   "attempts": 1,
+   "investigation_efficiency": 0.5,
+   "llm_confidence": 0.93,
+   "calibrated_confidence": 0.93,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 11790,
+   "cost_usd": 0.011031,
+   "hindsight_billed_tokens": 556,
+   "hindsight_cost_usd": 0.00556,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 10,
+   "held_out": true,
+   "after_config_regression": true,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "RECALIBRATE_SENSOR",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/dd6f2c3e6954319c384ab36402661813",
+   "error": null
+  },
+  {
+   "incident_id": "INC-010",
+   "ts": 1790624441.6113772,
+   "true_type": "sensor_drift",
+   "diagnosis": "local sensor drift with thermal/vision false rejects",
+   "machine_id": "M5",
+   "memory_enabled": 1,
+   "exposure": 3,
+   "status": "resolved",
+   "mttr_sim_s": 680,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 14.39,
+   "tool_calls": 10,
+   "first_attempt_tool_calls": 10,
+   "attempts": 1,
+   "investigation_efficiency": 1.0,
+   "llm_confidence": 0.96,
+   "calibrated_confidence": 0.96,
+   "memory_hit": 1,
+   "top_match_same_class": 1,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 14384,
+   "cost_usd": 0.01259,
+   "hindsight_billed_tokens": 6349,
+   "hindsight_cost_usd": 0.00955,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 10,
+   "held_out": true,
+   "after_config_regression": true,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [
+    {
+     "incident_id": "INC-003",
+     "type": "sensor_drift",
+     "rank": 1,
+     "rerank": 0.4139,
+     "strength": "strong"
+    },
+    {
+     "incident_id": "INC-006",
+     "type": "sensor_drift",
+     "rank": 2,
+     "rerank": 0.1665,
+     "strength": "weak"
+    }
+   ],
+   "first_recommendation": "RECALIBRATE_SENSOR",
+   "cited": [
+    "INC-003",
+    "INC-006"
+   ],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/5170488ae03351efc96f00f510f750ed",
+   "error": null
+  },
+  {
+   "incident_id": "INC-011",
+   "ts": 1790624444.828258,
+   "true_type": "resource_exhaustion",
+   "diagnosis": "controller memory exhaustion",
+   "machine_id": "M4",
+   "memory_enabled": 0,
+   "exposure": 3,
+   "status": "resolved",
+   "mttr_sim_s": 615,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 15.47,
+   "tool_calls": 7,
+   "first_attempt_tool_calls": 7,
+   "attempts": 1,
+   "investigation_efficiency": 0.857,
+   "llm_confidence": 0.97,
+   "calibrated_confidence": 0.97,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 7652,
+   "cost_usd": 0.007373,
+   "hindsight_billed_tokens": 451,
+   "hindsight_cost_usd": 0.00451,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 11,
+   "held_out": true,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "CLEAR_CACHE",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/b878726f25a4cf149ee0af5ff996b1b9",
+   "error": null
+  },
+  {
+   "incident_id": "INC-011",
+   "ts": 1790624452.908167,
+   "true_type": "resource_exhaustion",
+   "diagnosis": "local controller memory exhaustion",
+   "machine_id": "M4",
+   "memory_enabled": 1,
+   "exposure": 3,
+   "status": "resolved",
+   "mttr_sim_s": 650,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 10.88,
+   "tool_calls": 8,
+   "first_attempt_tool_calls": 8,
+   "attempts": 1,
+   "investigation_efficiency": 0.875,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 1,
+   "top_match_same_class": 1,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 13984,
+   "cost_usd": 0.009067,
+   "hindsight_billed_tokens": 6829,
+   "hindsight_cost_usd": 0.059401,
+   "runbook_refreshes": 1,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 11,
+   "held_out": true,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [
+    {
+     "incident_id": "INC-001",
+     "type": "resource_exhaustion",
+     "rank": 1,
+     "rerank": 0.9565,
+     "strength": "strong"
+    },
+    {
+     "incident_id": "INC-002",
+     "type": "config_regression",
+     "rank": 2,
+     "rerank": 0.3965,
+     "strength": "weak"
+    },
+    {
+     "incident_id": "INC-008",
+     "type": "resource_exhaustion",
+     "rank": 3,
+     "rerank": 0.1957,
+     "strength": "weak"
+    }
+   ],
+   "first_recommendation": "CLEAR_CACHE",
+   "cited": [
+    "INC-001",
+    "INC-008"
+   ],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/3fafa90fe3503f233ffe96d45492c483",
+   "error": null
+  },
+  {
+   "incident_id": "INC-012",
+   "ts": 1790624456.7505405,
+   "true_type": "network_failure",
+   "diagnosis": "shared gateway network disturbance",
+   "machine_id": "M5",
+   "memory_enabled": 0,
+   "exposure": 3,
+   "status": "resolved",
+   "mttr_sim_s": 505,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 11.68,
+   "tool_calls": 9,
+   "first_attempt_tool_calls": 9,
+   "attempts": 1,
+   "investigation_efficiency": 0.778,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 0,
+   "top_match_same_class": null,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 11282,
+   "cost_usd": 0.010455,
+   "hindsight_billed_tokens": 496,
+   "hindsight_cost_usd": 0.05496,
+   "runbook_refreshes": 1,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_off",
+   "seed": 1,
+   "position": 12,
+   "held_out": true,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [],
+   "first_recommendation": "RESTART_GATEWAY",
+   "cited": [],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/515f37c6636bbffc72302ebf1110becd",
+   "error": null
+  },
+  {
+   "incident_id": "INC-012",
+   "ts": 1790624472.9769833,
+   "true_type": "network_failure",
+   "diagnosis": "shared gateway network disruption from uplink flap",
+   "machine_id": "M5",
+   "memory_enabled": 1,
+   "exposure": 3,
+   "status": "resolved",
+   "mttr_sim_s": 470,
+   "human_wait_sim_s": 0,
+   "agent_time_real_s": 19.74,
+   "tool_calls": 8,
+   "first_attempt_tool_calls": 8,
+   "attempts": 1,
+   "investigation_efficiency": 0.75,
+   "llm_confidence": 0.98,
+   "calibrated_confidence": 0.98,
+   "memory_hit": 1,
+   "top_match_same_class": 1,
+   "recommendation_correct": 1,
+   "first_time_right": 1,
+   "false_replay": 0,
+   "escalated": 0,
+   "llm_tokens": 13635,
+   "cost_usd": 0.008663,
+   "hindsight_billed_tokens": 7240,
+   "hindsight_cost_usd": 0.009433,
+   "runbook_refreshes": 0,
+   "run_id": "20260928-193803-c380d38-quick",
+   "condition": "memory_on",
+   "seed": 1,
+   "position": 12,
+   "held_out": true,
+   "after_config_regression": false,
+   "prior_same_class": true,
+   "prior_other_class": true,
+   "matches": [
+    {
+     "incident_id": "INC-007",
+     "type": "network_failure",
+     "rank": 1,
+     "rerank": 0.8787,
+     "strength": "strong"
+    },
+    {
+     "incident_id": "INC-004",
+     "type": "network_failure",
+     "rank": 2,
+     "rerank": 0.7684,
+     "strength": "strong"
+    }
+   ],
+   "first_recommendation": "RESTART_GATEWAY",
+   "cited": [
+    "INC-007",
+    "INC-004"
+   ],
+   "trace_url": "https://us.cloud.langfuse.com/project/cmulf4hha07ngad0cidlo44fp/traces/cbe73192eeb187482d1fa5def5eb46b5",
+   "error": null
+  }
+ ]
+}
