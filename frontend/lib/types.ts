@@ -169,8 +169,12 @@ export interface UsageTotals {
   reasoning_tokens: number;
   cost_usd: number;
   unpriced_calls: number;
-  memory_tokens: number;
+  memory_tokens: number; // Hindsight's internal LLM tokens (informational)
+  memory_billed_tokens: number; // estimated billable Hindsight tokens
+  memory_cost_usd: number; // estimated
+  memory_refreshes: number;
   total_tokens: number;
+  total_cost_usd: number;
 }
 
 export interface UsageResponse {
@@ -179,6 +183,7 @@ export interface UsageResponse {
   all_time?: UsageTotals;
   session?: UsageTotals;
   by_model?: { provider: string; model: string; calls: number; tokens: number; cost_usd: number }[];
+  pricing?: { llm: string; hindsight: string };
 }
 
 export interface CustomSpec {
@@ -191,4 +196,42 @@ export interface CustomSpec {
   calibration: "fresh" | "old";
   network: "normal" | "degraded";
   memory_trend: "flat" | "climbing";
+}
+
+// ---- eval report (GET /api/eval/latest; backend/eval/report.py) ----
+
+export interface EvalEstimate {
+  mean: number;
+  lo: number;
+  hi: number;
+  n: number;
+}
+
+export type EvalBucket = "1st" | "2nd" | "3rd+";
+export type EvalMetric = "accuracy" | "mttr_min" | "tool_calls" | "first_attempt_tool_calls" | "confidence";
+
+export interface EvalTarget {
+  id: string;
+  target: string;
+  status: "PASS" | "FAIL" | "NO DATA";
+  evidence: string;
+}
+
+export interface EvalSummary {
+  rows: number;
+  errors: number;
+  seeds: number[];
+  by_exposure: Record<EvalMetric, Record<EvalBucket, { memory_on: EvalEstimate | null; memory_off: EvalEstimate | null; diff: EvalEstimate | null }>>;
+  targets: EvalTarget[];
+  discrimination: Record<"memory_on" | "memory_off", { probes: { k: number; n: number } }>;
+  retrieval: { recall_at_1: EvalEstimate | null; strong_precision: EvalEstimate | null };
+  calibration: Record<"memory_on" | "memory_off", { brier: number | null }>;
+  totals: { llm_usd: number; hindsight_usd: number; incidents: number };
+}
+
+export interface EvalLatest {
+  run_id: string;
+  path: string;
+  metadata: Record<string, unknown> & { git_sha?: string; llm_primary?: string; started_at?: string; tool_call_sim_s?: number };
+  summary: EvalSummary;
 }

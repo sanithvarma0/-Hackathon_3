@@ -19,6 +19,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "matplotlib>=3.11.2",
     "mypy",
     "pytest",
     "pytest-asyncio",
@@ -43,6 +44,9 @@ extend-exclude = ["*.md"]  # keep ruff away from code samples in the plan docs
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/eval/report.py" = ["E501"]  # Markdown table templates read better unwrapped
 
 [tool.mypy]
 python_version = "3.11"

@@ -437,7 +437,11 @@ class Simulator:
         incident_type: IncidentType | None = None,
         machine: str | None = None,
         custom: CustomIncidentSpec | None = None,
+        spec_seed: int | None = None,
     ) -> Incident:
+        """Start an incident. `spec_seed` (eval harness) makes the incident identical across
+        runs whatever happened before it: the simulator's random stream restarts from it, so
+        paired memory-ON/OFF runs face the same signature, magnitude, timing and wording."""
         with self._lock:
             self.tick()
             if self._fault is not None:
@@ -445,6 +449,8 @@ class Simulator:
                     "INCIDENT_ACTIVE",
                     f"{self._fault.incident_id} is still open; resolve it first",
                 )
+            if spec_seed is not None:
+                self._rng = random.Random(spec_seed)
             rng = self._rng
             if custom is not None:
                 self._require_machine(custom.machine)

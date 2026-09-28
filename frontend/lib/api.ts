@@ -2,6 +2,7 @@ import type {
   Action,
   BusEvent,
   CustomSpec,
+  EvalLatest,
   IncidentView,
   MemoryRecord,
   MetricsRow,
@@ -85,6 +86,7 @@ export const api = {
   memoryRecords: () => request<MemoryRecord[]>("/api/memory/records"),
   runbook: () => request<{ bank_id: string; content: string | null }>("/api/memory/runbook"),
   metrics: () => request<MetricsRow[]>("/api/metrics"),
+  evalLatest: () => request<EvalLatest>("/api/eval/latest"),
   usage: () => request<UsageResponse>("/api/usage"),
   reset: (bank: "live" | "seeded", wipeMemory: boolean) =>
     post("/api/admin/reset", { bank, wipe_memory: wipeMemory }),

@@ -10,7 +10,7 @@ from typing import Any
 from hindsight_client import Hindsight
 
 from backend.memory.store import MemoryMatch, MemoryRecall, MemoryRecord
-from backend.usage import UsageLedger
+from backend.usage import UsageLedger, estimate_tokens
 
 INCIDENT_PATTERNS_ID = "incident-patterns"
 
@@ -104,6 +104,7 @@ class HindsightMemory:
         self.bank_id = bank_id
         self._rel = rel_rerank
         self._floor = min_rerank
+        self._last_refresh: str | None = None  # runbook's last_refreshed_at, last seen
 
     async def ensure_bank(self) -> None:
         """Create the bank (idempotent) and the Incident Patterns mental model (6.1, 6.5)."""
@@ -130,6 +131,31 @@ class HindsightMemory:
                     "fact_types": ["observation"],
                 },
             )
+        await self.check_refresh()  # baseline: creating the model is not a billed refresh
+
+    async def check_refresh(self) -> bool:
+        """Record a runbook refresh (billed per call) if the model was rebuilt since last seen.
+
+        Hindsight refreshes the mental model itself after consolidation, so refreshes are
+        observed through `last_refreshed_at` (metadata only, no content). Several refreshes
+        between two checks count once: a lower bound.
+        """
+        try:
+            model = await self._client.aget_mental_model(
+                bank_id=self.bank_id, mental_model_id=INCIDENT_PATTERNS_ID, detail="metadata"
+            )
+        except Exception:
+            return False
+        seen = str(getattr(model, "last_refreshed_at", "") or "")
+        if self._last_refresh is None or not seen:
+            self._last_refresh = seen or self._last_refresh
+            return False
+        if seen == self._last_refresh:
+            return False
+        self._last_refresh = seen
+        if self._ledger is not None:
+            self._ledger.record_memory(op="mm_refresh", calls=1)
+        return True
 
     async def delete_bank(self) -> None:
         await self._client.adelete_bank(self.bank_id)
@@ -142,6 +168,10 @@ class HindsightMemory:
             budget="mid",
             max_tokens=4096,
         )
+        if self._ledger is not None:  # billed on the text returned (estimate)
+            self._ledger.record_memory(
+                op="recall", billed_tokens=sum(estimate_tokens(r.text) for r in resp.results)
+            )
         facts = [r for r in resp.results if r.type in ("world", "experience")]
         observations = tuple(r.text for r in resp.results if r.type == "observation")[:5]
         return MemoryRecall(
@@ -162,6 +192,8 @@ class HindsightMemory:
         except Exception:  # missing or not yet built: the runbook is optional context
             return None
         content = getattr(model, "content", None)
+        if self._ledger is not None and content:
+            self._ledger.record_memory(op="mm_retrieve", billed_tokens=estimate_tokens(content))
         return content or None
 
     async def retain(self, record: MemoryRecord) -> None:
@@ -176,9 +208,10 @@ class HindsightMemory:
             retain_async=False,  # recallable immediately (measured, 14.1)
         )
         usage = getattr(resp, "usage", None)
-        if self._ledger is not None and usage is not None:
+        if self._ledger is not None:
             self._ledger.record_memory(
                 op=f"retain_{record.kind}",
                 input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
                 output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+                billed_tokens=estimate_tokens(record.text),  # billed on content (estimate)
             )

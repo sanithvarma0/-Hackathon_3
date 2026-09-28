@@ -138,3 +138,116 @@ def test_each_provider_gets_its_own_request_parameters():
 def test_unconfigured_providers_are_skipped():
     llm = build_llm(Settings(_env_file=None, groq_api_key="gsk"), traced=False)
     assert llm.models == ["groq:openai/gpt-oss-120b"]
+
+
+# ---- Hindsight spend ----------------------------------------------------------------------
+
+
+def test_hindsight_operations_are_priced_from_the_billing_page():
+    from backend.usage import HINDSIGHT_PRICES, memory_cost_usd
+
+    assert HINDSIGHT_PRICES.retain_per_m == 10.00 and HINDSIGHT_PRICES.mm_refresh_per_call == 0.05
+    assert memory_cost_usd("retain_episode", 1_000, 1) == pytest.approx(0.01)
+    assert memory_cost_usd("recall", 1_000, 1) == pytest.approx(0.00075)
+    assert memory_cost_usd("mm_retrieve", 1_000, 1) == pytest.approx(0.00025)
+    assert memory_cost_usd("mm_refresh", 0, 2) == pytest.approx(0.10)
+
+
+def test_memory_spend_is_in_the_totals_next_to_llm_spend():
+    ledger = UsageLedger(":memory:", run_label="r")
+    token = current_incident.set("INC-001")
+    ledger.record_memory(
+        op="retain_episode", input_tokens=2_000, output_tokens=400, billed_tokens=500
+    )
+    ledger.record_memory(op="mm_refresh", calls=1)
+    current_incident.reset(token)
+    t = ledger.totals(incident_id="INC-001")
+    assert t.memory_tokens == 2_400  # Hindsight's internal tokens, informational
+    assert t.memory_billed_tokens == 500
+    assert t.memory_refreshes == 1
+    assert t.memory_cost_usd == pytest.approx(0.005 + 0.05)
+    assert t.total_cost_usd == pytest.approx(t.cost_usd + t.memory_cost_usd)
+
+
+def test_an_existing_ledger_is_migrated_in_place(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "usage.db"
+    old = sqlite3.connect(path)
+    old.executescript(
+        "CREATE TABLE memory_usage (ts REAL NOT NULL, run_label TEXT NOT NULL, incident_id TEXT,"
+        " op TEXT NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL);"
+        "INSERT INTO memory_usage VALUES (1, 'old', 'INC-001', 'retain_episode', 900, 100);"
+    )
+    old.commit()
+    old.close()
+    ledger = UsageLedger(path)
+    ledger.record_memory(op="recall", billed_tokens=1_000)
+    t = ledger.totals()
+    assert t.memory_tokens == 1_000  # the old row's tokens survive
+    assert t.memory_cost_usd == pytest.approx(0.00075)  # old row: cost unknown, counted as 0
+
+
+class FakeHindsightClient:
+    """Just enough of hindsight_client.Hindsight for HindsightMemory's accounting paths."""
+
+    def __init__(self) -> None:
+        self.refreshed_at = "2026-09-29T10:00:00+00:00"
+        self.content = "## Configuration regressions\n- Effective fix: roll back."
+
+    async def acreate_bank(self, **_: Any) -> None:
+        return None
+
+    async def alist_mental_models(self, **_: Any) -> Any:
+        return SimpleNamespace(items=[SimpleNamespace(id="incident-patterns")])
+
+    async def aget_mental_model(self, *, detail: str, **_: Any) -> Any:
+        return SimpleNamespace(
+            last_refreshed_at=self.refreshed_at,
+            content=self.content if detail != "metadata" else None,
+        )
+
+    async def aretain(self, **_: Any) -> Any:
+        return SimpleNamespace(usage=SimpleNamespace(input_tokens=2_000, output_tokens=400))
+
+    async def arecall(self, **_: Any) -> Any:
+        return SimpleNamespace(results=[SimpleNamespace(type="observation", text="x" * 400)])
+
+
+async def test_runbook_refreshes_are_counted_once_each_and_not_at_creation():
+    from backend.memory.hindsight import HindsightMemory
+
+    client = FakeHindsightClient()
+    ledger = UsageLedger(":memory:")
+    memory = HindsightMemory(client, "bank", rel_rerank=0.15, min_rerank=0.05, ledger=ledger)  # type: ignore[arg-type]
+    await memory.ensure_bank()
+    assert not await memory.check_refresh()  # nothing rebuilt since creation
+    client.refreshed_at = "2026-09-29T10:05:00+00:00"
+    assert await memory.check_refresh()
+    assert not await memory.check_refresh()  # same rebuild, seen twice: counted once
+    assert ledger.totals().memory_refreshes == 1
+
+
+async def test_retain_recall_and_runbook_reads_record_billed_estimates():
+    from datetime import UTC, datetime
+
+    from backend.memory.hindsight import HindsightMemory
+    from backend.memory.store import MemoryRecord
+
+    ledger = UsageLedger(":memory:")
+    memory = HindsightMemory(
+        FakeHindsightClient(), "bank", rel_rerank=0.15, min_rerank=0.05, ledger=ledger
+    )  # type: ignore[arg-type]
+    record = MemoryRecord(
+        document_id="INC-001",
+        incident_id="INC-001",
+        kind="episode",
+        text="e" * 2_000,
+        metadata={"incident_id": "INC-001"},
+        timestamp=datetime.now(UTC),
+    )
+    await memory.retain(record)
+    await memory.recall("servo timeouts")
+    await memory.runbook()
+    ops = dict(ledger.rows("SELECT op, billed_tokens FROM memory_usage"))
+    assert ops == {"retain_episode": 500, "recall": 100, "mm_retrieve": 14}  # ~4 chars/token

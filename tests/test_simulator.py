@@ -384,3 +384,36 @@ def test_closing_an_incident_refreshes_the_machine_immediately(world: World):
     world.adapter.execute_action(incident.id, "ESCALATE_HUMAN")
     assert world.adapter.get_machine_metrics("M2").status == "healthy"
     assert world.sim.trigger_incident("sensor_drift", "M2").machine_id == "M2"
+
+
+def test_spec_seed_makes_an_incident_identical_whatever_came_before():
+    from backend.simulator import ManualClock, Simulator
+    from backend.simulator.db import connect
+
+    def run(history_hours: int):
+        clock = ManualClock(1_790_000_000.0)
+        conn = connect(":memory:")
+        sim = Simulator(conn, clock, seed=1)
+        for _ in range(history_hours):  # different pasts consume the random stream differently
+            clock.advance(3_600)
+            sim.tick()
+        inc = sim.trigger_incident("config_regression", "M3", spec_seed=42)
+        clock.advance(600)
+        sim.tick()
+        # The incident relative to its onset: same log wording/values at the same offsets,
+        # same throughput trajectory.
+        logs = conn.execute(
+            "SELECT ts - ?, level, message FROM logs WHERE machine_id = 'M3' AND ts >= ? "
+            "ORDER BY ts",
+            (inc.onset_ts, inc.onset_ts),
+        ).fetchall()
+        tp = [p.value for p in sim.get_metric_history("M3", "throughput_pct", 600 / 3600)]
+        return inc.affected, logs, tp[-30:]
+
+    a = run(0)
+    b = run(5)
+    assert a[0] == b[0]
+    assert a[1] == b[1] and a[1]  # identical, and not trivially empty
+    # Background jitter is a smoothed random process that carries its state from before the
+    # incident, so readings may differ in the second decimal — never in shape or magnitude.
+    assert max(abs(x - y) for x, y in zip(a[2], b[2], strict=True)) < 0.1

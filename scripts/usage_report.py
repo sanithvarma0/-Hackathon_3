@@ -6,7 +6,7 @@ Run: uv run python scripts/usage_report.py [--runs N]
 import argparse
 
 from backend.config import get_settings
-from backend.usage import PRICING_SOURCE, UsageLedger
+from backend.usage import HINDSIGHT_PRICING_SOURCE, PRICING_SOURCE, UsageLedger
 
 
 def main() -> None:
@@ -19,7 +19,8 @@ def main() -> None:
     spent = ledger.spent_usd()
 
     print(f"ledger: {s.usage_db_path}")
-    print(f"pricing: {PRICING_SOURCE}\n")
+    print(f"pricing: {PRICING_SOURCE}")
+    print(f"         {HINDSIGHT_PRICING_SOURCE} Billed tokens are estimates (~4 chars/token).\n")
     print(
         f"ALL TIME  ${spent:.4f} spent of ${s.llm_spend_cap_usd:.2f} cap "
         f"({100 * spent / s.llm_spend_cap_usd:.1f}%)"
@@ -29,7 +30,12 @@ def main() -> None:
         f"({total.prompt_tokens:,} in / {total.cached_tokens:,} cached / "
         f"{total.completion_tokens:,} out / {total.reasoning_tokens:,} reasoning)"
     )
-    print(f"          Hindsight retain tokens: {total.memory_tokens:,}")
+    print(
+        f"          Hindsight ${total.memory_cost_usd:.4f} (estimated): "
+        f"{total.memory_billed_tokens:,} billed tokens, {total.memory_refreshes} runbook refreshes "
+        f"— recorded since the ledger started pricing memory; the Hindsight dashboard is "
+        f"authoritative"
+    )
     if total.unpriced_calls:
         print(f"          WARNING: {total.unpriced_calls} calls used a model with no known price")
 
@@ -43,6 +49,13 @@ def main() -> None:
             f"  {provider}:{model:<24} {calls:>5} calls {tokens:>10,} tokens ${cost:>8.4f}  "
             f"{failed} failed  avg {ms:.0f} ms"
         )
+
+    print("\nHINDSIGHT BY OPERATION")
+    for op, n, calls, billed, cost in ledger.rows(
+        "SELECT op, COUNT(*), SUM(calls), SUM(billed_tokens), SUM(cost_usd) FROM memory_usage "
+        "GROUP BY op ORDER BY 5 DESC"
+    ):
+        print(f"  {op:<24} {n:>5} ops {calls:>5} calls {billed:>10,} billed tokens ${cost:>8.4f}")
 
     print("\nBY AGENT STEP")
     for step, calls, tokens, cost in ledger.rows(

@@ -43,11 +43,23 @@ CREATE TABLE IF NOT EXISTS live_metrics (
 );
 """
 
+# Added after the first release; existing databases are migrated in place.
+ADDED_COLUMNS = {
+    "hindsight_billed_tokens": "INTEGER",  # estimated (usage.py)
+    "hindsight_cost_usd": "REAL",  # estimated
+    "runbook_refreshes": "INTEGER",
+}
+
 CLASS_FIXES = {fix for fix in CORRECT_FIX.values() if fix != "ESCALATE_HUMAN"}
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    have = {r[1] for r in conn.execute("PRAGMA table_info(live_metrics)")}
+    for name, decl in ADDED_COLUMNS.items():
+        if name not in have:
+            conn.execute(f"ALTER TABLE live_metrics ADD COLUMN {name} {decl}")
+    conn.commit()
 
 
 def build_row(
@@ -89,6 +101,9 @@ def build_row(
         "escalated": int(incident.status == "escalated"),
         "llm_tokens": usage.total_tokens if usage else None,
         "cost_usd": round(usage.cost_usd, 6) if usage else None,
+        "hindsight_billed_tokens": usage.memory_billed_tokens if usage else None,
+        "hindsight_cost_usd": round(usage.memory_cost_usd, 6) if usage else None,
+        "runbook_refreshes": usage.memory_refreshes if usage else None,
     }
 
 

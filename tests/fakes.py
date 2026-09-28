@@ -142,6 +142,9 @@ class FakeMemory:
             raise ConnectionError("hindsight unreachable")
         self.records[record.document_id] = record
 
+    async def check_refresh(self) -> bool:
+        return False
+
 
 class Harness:
     """A world, an agent wired to fakes, and the events it emitted."""

@@ -440,3 +440,19 @@ async def test_plant_history_backfills_sparklines(rig: Rig):
     assert 50 <= len(body["M3"]) <= 61 and all(0 < p["value"] <= 100 for p in body["M3"])
     assert (await rig.http.get("/api/plant/history", params={"metric": "nope"})).status_code == 422
     assert (await rig.http.get("/api/plant/history", params={"minutes": 999})).status_code == 422
+
+
+async def test_eval_latest_serves_the_committed_report_or_a_clear_404(rig: Rig, tmp_path):
+    rig.service.settings = rig.settings.model_copy(update={"eval_dir": tmp_path})
+    missing = await rig.http.get("/api/eval/latest")
+    assert missing.status_code == 404 and missing.json()["code"] == "EVAL_NOT_FOUND"
+
+    run = tmp_path / "20260929-abc"
+    run.mkdir()
+    (run / "results.json").write_text(
+        json.dumps({"metadata": {"git_sha": "abc"}, "summary": {"targets": []}, "rows": [1, 2]})
+    )
+    (tmp_path / "latest.json").write_text(json.dumps({"run_id": "20260929-abc", "path": run.name}))
+    body = (await rig.http.get("/api/eval/latest")).json()
+    assert body["run_id"] == "20260929-abc" and body["summary"] == {"targets": []}
+    assert "rows" not in body  # the summary only: rows stay in the committed file

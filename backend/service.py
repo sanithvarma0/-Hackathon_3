@@ -10,6 +10,7 @@ manual (tests; `advance()` moves time explicitly, no background loops).
 
 import asyncio
 import contextlib
+import json
 import sqlite3
 import time
 from collections.abc import Awaitable, Callable, Coroutine
@@ -34,7 +35,12 @@ from backend.schemas import (
 )
 from backend.simulator import ManualClock, SimNotification, Simulator, SimulatorError
 from backend.simulator.clock import Clock
-from backend.usage import UsageLedger
+from backend.usage import (
+    HINDSIGHT_PRICING_SOURCE,
+    PRICING_SOURCE,
+    Totals,
+    UsageLedger,
+)
 
 AgentStatus = Literal[
     "waiting_detection", "investigating", "awaiting_action", "acting", "finished", "failed"
@@ -281,11 +287,20 @@ class MemoryOpsService:
             "SELECT provider, model, COUNT(*), SUM(prompt_tokens + completion_tokens), "
             "COALESCE(SUM(cost_usd), 0) FROM llm_usage GROUP BY provider, model"
         )
+
+        def dump(t: Totals) -> dict[str, Any]:
+            return {
+                **t.__dict__,
+                "total_tokens": t.total_tokens,
+                "total_cost_usd": t.total_cost_usd,
+            }
+
         return {
             "available": True,
             "cap_usd": ledger.spend_cap_usd,
-            "all_time": {**all_time.__dict__, "total_tokens": all_time.total_tokens},
-            "session": {**session.__dict__, "total_tokens": session.total_tokens},
+            "pricing": {"llm": PRICING_SOURCE, "hindsight": HINDSIGHT_PRICING_SOURCE},
+            "all_time": dump(all_time),
+            "session": dump(session),
             "by_model": [
                 {"provider": p, "model": m, "calls": c, "tokens": t, "cost_usd": cost}
                 for p, m, c, t, cost in by_model
@@ -302,6 +317,25 @@ class MemoryOpsService:
                 for p in self.sim.get_metric_history(m.machine_id, metric, minutes / 60)
             ]
             for m in self.sim.plant_state().machines
+        }
+
+    def eval_latest(self) -> dict[str, Any]:
+        """The latest committed eval report's summary (docs/eval/latest.json → results.json)."""
+        pointer = self.settings.eval_dir / "latest.json"
+        try:
+            latest = json.loads(pointer.read_text())
+            results = json.loads(
+                (self.settings.eval_dir / latest["path"] / "results.json").read_text()
+            )
+        except FileNotFoundError as e:
+            raise ServiceError(404, "EVAL_NOT_FOUND", "no eval report yet: run `make eval`") from e
+        except (KeyError, ValueError) as e:
+            raise ServiceError(500, "EVAL_UNREADABLE", f"eval report is malformed: {e}") from e
+        return {
+            "run_id": latest["run_id"],
+            "path": f"docs/eval/{latest['path']}",
+            "metadata": results["metadata"],
+            "summary": results["summary"],
         }
 
     def metric_series(self) -> list[dict[str, Any]]:
@@ -451,6 +485,10 @@ class MemoryOpsService:
 
     async def _watch_runbook(self) -> None:
         if self._agent is None or self._agent.memory is None:
+            return
+        # Poll metadata only; fetch (and pay for) the content only after a rebuild.
+        refreshed = await self._agent.memory.check_refresh()
+        if not refreshed and self._last_runbook is not None:
             return
         content = await self._agent.memory.runbook()
         if content and content != self._last_runbook:

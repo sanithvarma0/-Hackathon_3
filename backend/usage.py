@@ -1,8 +1,14 @@
 """Token and spend accounting for every LLM and memory call (persistent ledger + hard cap).
 
 Every LLM call is recorded with its tokens (input, cached input, output, reasoning), latency,
-model, provider, the incident and agent step that made it, and its cost from `PRICES`. Hindsight
-retains are recorded with the tokens Hindsight reports. `scripts/usage_report.py` summarizes it.
+model, provider, the incident and agent step that made it, and its cost from `PRICES`.
+
+Every Hindsight operation is recorded with its billable units and cost from
+`HINDSIGHT_PRICES`: retains, recalls and runbook reads by tokens, runbook (mental model)
+refreshes per call. Hindsight does not report billable tokens (a retain's `usage` counts its
+internal LLM tokens, ~4x the billed amount; recall reports nothing), so billed tokens are
+estimated from text size and labelled as estimates — the Hindsight billing page is
+authoritative. `scripts/usage_report.py` summarizes the ledger.
 
 A spend cap (`LLM_SPEND_CAP_USD`) is enforced against the ledger's all-time total, so a runaway
 loop can never drain the account: once reached, LLM calls raise `BudgetExceeded` and the agent
@@ -43,6 +49,40 @@ PRICES: dict[str, Price] = {
     "openai/gpt-oss-20b": Price(0.0, 0.0, 0.0),
     "qwen/qwen3.8-27b": Price(0.0, 0.0, 0.0),
 }
+
+
+@dataclass(frozen=True)
+class HindsightPrice:
+    """Hindsight Cloud operation rates (USD)."""
+
+    retain_per_m: float
+    recall_per_m: float
+    mm_retrieve_per_m: float
+    mm_refresh_per_call: float
+
+
+HINDSIGHT_PRICING_SOURCE = "Hindsight Cloud billing page, Operation rates, read 2026-09-29."
+HINDSIGHT_PRICES = HindsightPrice(
+    retain_per_m=10.00, recall_per_m=0.75, mm_retrieve_per_m=0.25, mm_refresh_per_call=0.05
+)
+CHARS_PER_TOKEN = 4  # estimate for English + log text; Hindsight does not report billed tokens
+
+
+def estimate_tokens(text: str) -> int:
+    return round(len(text) / CHARS_PER_TOKEN)
+
+
+def memory_cost_usd(op: str, billed_tokens: int, calls: int) -> float:
+    p = HINDSIGHT_PRICES
+    if op.startswith("retain"):
+        return billed_tokens * p.retain_per_m / 1e6
+    if op == "recall":
+        return billed_tokens * p.recall_per_m / 1e6
+    if op == "mm_retrieve":
+        return billed_tokens * p.mm_retrieve_per_m / 1e6
+    if op == "mm_refresh":
+        return calls * p.mm_refresh_per_call
+    return 0.0
 
 
 def cost_usd(model: str, prompt: int, cached: int, completion: int) -> float | None:
@@ -101,11 +141,18 @@ CREATE TABLE IF NOT EXISTS memory_usage (
     ts REAL NOT NULL,
     run_label TEXT NOT NULL,
     incident_id TEXT,
-    op TEXT NOT NULL,                   -- retain_episode | retain_lesson | recall
-    input_tokens INTEGER NOT NULL,
+    op TEXT NOT NULL,  -- retain_episode|retain_lesson|recall|mm_retrieve|mm_refresh
+    input_tokens INTEGER NOT NULL,      -- Hindsight's internal LLM tokens (reported on retain)
     output_tokens INTEGER NOT NULL
 );
 """
+
+# Columns added after the first release; existing ledgers are migrated in place.
+MEMORY_COLUMNS = {
+    "billed_tokens": "INTEGER NOT NULL DEFAULT 0",  # estimated billable tokens
+    "calls": "INTEGER NOT NULL DEFAULT 1",
+    "cost_usd": "REAL NOT NULL DEFAULT 0",  # rows before the migration: unknown, left at 0
+}
 
 
 class BudgetExceeded(Exception):
@@ -122,10 +169,17 @@ class Totals:
     cost_usd: float
     unpriced_calls: int
     memory_tokens: int
+    memory_billed_tokens: int = 0
+    memory_cost_usd: float = 0.0
+    memory_refreshes: int = 0
 
     @property
     def total_tokens(self) -> int:
         return self.prompt_tokens + self.completion_tokens
+
+    @property
+    def total_cost_usd(self) -> float:
+        return self.cost_usd + self.memory_cost_usd
 
 
 class UsageLedger:
@@ -136,6 +190,11 @@ class UsageLedger:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
         self._conn.executescript(SCHEMA)
+        have = {r[1] for r in self._conn.execute("PRAGMA table_info(memory_usage)")}
+        for name, decl in MEMORY_COLUMNS.items():
+            if name not in have:
+                self._conn.execute(f"ALTER TABLE memory_usage ADD COLUMN {name} {decl}")
+        self._conn.commit()
         self._lock = threading.Lock()
         self.run_label = run_label
         self.spend_cap_usd = spend_cap_usd
@@ -184,10 +243,20 @@ class UsageLedger:
             self._conn.commit()
         return cost
 
-    def record_memory(self, *, op: str, input_tokens: int, output_tokens: int) -> None:
+    def record_memory(
+        self,
+        *,
+        op: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        billed_tokens: int = 0,
+        calls: int = 1,
+    ) -> float:
+        cost = memory_cost_usd(op, billed_tokens, calls)
         with self._lock:
             self._conn.execute(
-                "INSERT INTO memory_usage VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO memory_usage (ts, run_label, incident_id, op, input_tokens, "
+                "output_tokens, billed_tokens, calls, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     time.time(),
                     self.run_label,
@@ -195,9 +264,13 @@ class UsageLedger:
                     op,
                     input_tokens,
                     output_tokens,
+                    billed_tokens,
+                    calls,
+                    cost,
                 ),
             )
             self._conn.commit()
+        return cost
 
     def spent_usd(self) -> float:
         with self._lock:
@@ -223,7 +296,10 @@ class UsageLedger:
                 args,
             ).fetchone()
             mem = self._conn.execute(
-                f"SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM memory_usage {clause}",  # noqa: S608
+                "SELECT COALESCE(SUM(input_tokens + output_tokens), 0), "
+                "COALESCE(SUM(billed_tokens), 0), COALESCE(SUM(cost_usd), 0), "
+                "COALESCE(SUM(CASE WHEN op = 'mm_refresh' THEN calls ELSE 0 END), 0) "
+                f"FROM memory_usage {clause}",  # noqa: S608
                 args,
             ).fetchone()
         return Totals(
@@ -235,6 +311,9 @@ class UsageLedger:
             cost_usd=float(llm[5]),
             unpriced_calls=llm[6],
             memory_tokens=mem[0],
+            memory_billed_tokens=mem[1],
+            memory_cost_usd=float(mem[2]),
+            memory_refreshes=mem[3],
         )
 
     def rows(self, sql: str, args: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:

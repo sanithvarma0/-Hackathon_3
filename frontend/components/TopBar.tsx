@@ -70,15 +70,17 @@ export default function TopBar({
           <span
             className="font-mono text-xs text-muted"
             title={[
-              `This run: ${usage.session.calls} LLM calls, ${fmtTokens(usage.session.total_tokens)} tokens, $${usage.session.cost_usd.toFixed(4)}`,
-              `All time: ${usage.all_time?.calls} calls, ${fmtTokens(usage.all_time?.total_tokens ?? 0)} tokens, $${usage.all_time?.cost_usd.toFixed(4)}`,
-              `Memory (retain) tokens this run: ${fmtTokens(usage.session.memory_tokens)}`,
-              usage.cap_usd ? `Spend cap: $${usage.cap_usd} — beyond it the agent escalates instead of calling the LLM` : "",
+              `This run: $${usage.session.total_cost_usd.toFixed(4)}`,
+              `  LLM: ${usage.session.calls} calls, ${fmtTokens(usage.session.total_tokens)} tokens, $${usage.session.cost_usd.toFixed(4)}`,
+              `  Hindsight (estimated): ${fmtTokens(usage.session.memory_billed_tokens)} billed tokens, ${usage.session.memory_refreshes} runbook refreshes, $${usage.session.memory_cost_usd.toFixed(4)}`,
+              `All time: LLM $${usage.all_time?.cost_usd.toFixed(4)} + Hindsight $${usage.all_time?.memory_cost_usd.toFixed(4)} (est.)`,
+              usage.cap_usd ? `LLM spend cap: $${usage.cap_usd} — beyond it the agent escalates instead of calling the LLM` : "",
+              "The Hindsight billing page is authoritative for memory spend.",
             ]
               .filter(Boolean)
               .join("\n")}
           >
-            SPEND <span className="text-text">${usage.session.cost_usd.toFixed(3)}</span> · {fmtTokens(usage.session.total_tokens)} tok
+            SPEND <span className="text-text">${usage.session.total_cost_usd.toFixed(3)}</span> · {fmtTokens(usage.session.total_tokens)} tok
           </span>
         )}
         <MemoryToggle on={memoryOn} set={setMemoryOn} />

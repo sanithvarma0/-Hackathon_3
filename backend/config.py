@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     llm_fallback_model: str = "openai/gpt-oss-120b"
     # Spend tracking (backend/usage.py): persistent ledger + hard cap on all-time LLM spend
     usage_db_path: Path = REPO_ROOT / "data" / "usage.db"
+    eval_dir: Path = REPO_ROOT / "docs" / "eval"  # committed eval reports (latest.json points)
     llm_spend_cap_usd: float = 10.0
     llm_call_budget_s: float = 45.0  # covers Groq rate-limit waits ("try again in 8s")
     llm_seed: int | None = 42  # fixed sampling seed for reproducible runs (eval, BUILD_PLAN 11.2)

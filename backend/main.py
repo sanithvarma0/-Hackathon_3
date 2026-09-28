@@ -246,6 +246,11 @@ def create_app(service_factory: ServiceFactory = live_service) -> FastAPI:
     async def metric_series(request: Request) -> list[dict[str, Any]]:
         return svc(request).metric_series()
 
+    @app.get("/api/eval/latest", tags=["learning"])
+    async def eval_latest(request: Request) -> dict[str, Any]:
+        """Summary of the latest committed evaluation report (BUILD_PLAN 11.4)."""
+        return svc(request).eval_latest()
+
     @app.get("/api/usage", tags=["system"])
     async def usage(request: Request) -> dict[str, Any]:
         """LLM spend and tokens: all-time, this session, by model; the spend cap."""

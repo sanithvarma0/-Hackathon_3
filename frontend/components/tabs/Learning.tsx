@@ -3,6 +3,8 @@
 import { Bar, BarChart, CartesianGrid, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "@/lib/api";
 import { fmtDuration } from "@/lib/reducer";
+import { useState } from "react";
+import EvalReport from "@/components/tabs/EvalReport";
 import { useApi } from "@/lib/useMemoryOps";
 import type { MetricsRow } from "@/lib/types";
 
@@ -88,24 +90,62 @@ function Chart({
 }
 
 export default function Learning({ version }: { version: number }) {
+  const evalReport = useApi(api.evalLatest, 0);
+  const [view, setView] = useState<"eval" | "live" | null>(null);
+  const shown = view ?? (evalReport.data ? "eval" : "live");
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
+      <header className="flex items-end justify-between">
+        <div>
+          <h2 className="font-mono text-lg font-semibold tracking-widest text-text">IS THE AGENT LEARNING?</h2>
+          <p className="text-sm text-muted">
+            {shown === "eval"
+              ? "The committed evaluation: the same agent on identical incident sequences with memory ON and OFF, scored against the simulator's ground truth."
+              : "Live incidents from this bank, scored against the simulator's ground truth. Small samples: anecdotes, not results."}
+          </p>
+        </div>
+        <div className="flex rounded-md border border-border p-0.5" role="tablist">
+          {(["eval", "live"] as const).map((v) => (
+            <button
+              key={v}
+              role="tab"
+              aria-selected={shown === v}
+              onClick={() => setView(v)}
+              className={`whitespace-nowrap rounded px-3 py-1.5 font-mono text-xs font-semibold tracking-widest ${shown === v ? "bg-panel-2 text-text" : "text-muted hover:text-text"}`}
+            >
+              {v === "eval" ? "EVAL REPORT" : "THIS SESSION"}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      {shown === "eval" ? (
+        evalReport.data ? (
+          <EvalReport report={evalReport.data} />
+        ) : (
+          <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted">
+            {evalReport.error?.includes("no eval report") || evalReport.error?.includes("HTTP 404")
+              ? "No evaluation report yet — run `make eval`."
+              : evalReport.error
+                ? `Could not load the eval report: ${evalReport.error}`
+                : "Loading the eval report…"}
+          </div>
+        )
+      ) : (
+        <LiveSession version={version} />
+      )}
+    </div>
+  );
+}
+
+function LiveSession({ version }: { version: number }) {
   const { data, error } = useApi(api.metrics, version);
   const rows = data ?? [];
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 p-4">
-      <header className="flex items-end justify-between">
-        <div>
-          <h2 className="font-mono text-lg font-semibold tracking-widest text-text">THE AGENT IS LEARNING</h2>
-          <p className="text-sm text-muted">
-            Live incidents from this bank, scored against the simulator&apos;s ground truth · n = {rows.length}. Small samples:
-            these are anecdotes until the eval report lands.
-          </p>
-        </div>
-        <div className="rounded border border-dashed border-border px-3 py-2 font-mono text-xs text-muted" title="BUILD_PLAN.md 11">
-          Eval report (paired ON/OFF, seeds, 95% CIs) · Phase 5
-        </div>
-      </header>
-
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <p className="font-mono text-xs text-muted">n = {rows.length} live incidents</p>
       {error && <p className="font-mono text-sm text-critical">Could not load metrics: {error}</p>}
 
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-4">
