@@ -1,5 +1,7 @@
-# MemoryOps — Build Specification v1.2
+# MemoryOps — Build Specification v1.3
 
+> **v1.3 changes (Phase 0.5 spikes run against the real services — Section 14):** Groq no longer serves `qwen/qwen3-32b` → fallback is `qwen/qwen3.8-27b`; semantic cosine does **not** separate true from false incident matches, so the 0.7 similarity threshold is replaced by a reranker-relative rule, the episode gains a generalized `SIGNATURE:` line, and recall queries are built from observed signals only; `tool_use_failed` payloads are usually refusal text, not salvageable tool calls; models may emit parallel tool calls and may silently coerce invalid arguments.
+>
 > **v1.2 changes (from v1.1, after reviewing reference repos — see TECH_STACK.md "Reference Repositories"):** "Incident Patterns" mental model promoted from stretch to core (Phase 3), configured from Vectorize's own ops bank template; episode record gains an `INVESTIGATION PATH` section (what evidence was decisive) to power `recall_hints`; Groq failure handling made concrete (`tool_use_failed` salvage, `include_reasoning: false`, fallback model verified at spike time); `simulate.py` runs each mode on its own throwaway bank and reports investigation efficiency; added a differentiation note against the official Hindsight cookbook demos.
 >
 > **v1.1 changes (from v1.0):** grounded all Hindsight calls in the real `hindsight-client` v0.10 SDK; added a Phase 0.5 spike; added a simulated clock so MTTR is measured, not invented; added a `verify` step (without it a trap fix looks like success); added a second memory touchpoint (`recall_hints`) so memory makes the agent *faster*, not just more accurate; removed the LLM-callable memory tool (it leaked memory into Memory-OFF runs); defined Memory-OFF semantics, demo reset, bank switching, SSE replay, Hindsight outage handling, full action/effect matrix, custom-builder classification rules, and a submission checklist. All headline numbers are now **targets to be replaced with measured values** (Section 14).
@@ -29,7 +31,7 @@
 | Agent runtime | **LangGraph** (raw `StateGraph`) | Single agent. No `create_react_agent`, no DeepAgents, no multi-agent. |
 | Human-in-the-loop | **LangGraph `interrupt()` + `InMemorySaver`** | `thread_id = incident_id`; resume with `Command(resume=...)`. |
 | Memory | **Hindsight Cloud** via `hindsight-client` (Python, v0.10.x) | `https://api.hindsight.vectorize.io`. The ONLY memory system. Promo `MEMHACK99`. |
-| LLM | **Groq** via the OpenAI-compatible endpoint | Primary `openai/gpt-oss-120b`, fallback `qwen/qwen3-32b`. |
+| LLM | **Groq** via the OpenAI-compatible endpoint | Primary `openai/gpt-oss-120b`, fallback `qwen/qwen3.8-27b` (verified served, Phase 0.5). |
 | Backend | **FastAPI** + `sse-starlette` | Python 3.11+. |
 | Database | **SQLite** | Simulator state, metrics, episode outbox. No vector DB. |
 | Observability | **Langfuse** Cloud (free tier) | `langfuse.openai` drop-in + `@observe` on graph nodes. |
@@ -75,7 +77,7 @@
 │                   │HINDSIGHT │ │  GROQ    │ │ LANGFUSE │     │
 │                   │retain    │ │gpt-oss-  │ │ traces   │     │
 │                   │recall    │ │120b →    │ │          │     │
-│                   │mental    │ │qwen3-32b │ │          │     │
+│                   │mental    │ │qwen3.8   │ │          │     │
 │                   │ model    │ └──────────┘ └──────────┘     │
 │                   └──────────┘                               │
 └─────────────────────────────────────────────────────────────┘
@@ -340,6 +342,8 @@ Written via `retain()` on every incident resolution. Rendered as **prose** (Hind
 ```
 INCIDENT {incident_id} — {sim timestamp}
 MACHINE: {machine_id} ({machine_profile})
+SIGNATURE: {one generalized line, no IDs/numbers, e.g. "gradual throughput decline that
+began shortly after a configuration deployment; controller timing and motion errors"}
 
 SYMPTOMS: throughput {delta}% over {duration} min, onset {gradual|sudden},
 error logs: {log_lines}
@@ -363,7 +367,7 @@ LESSON: {one-line lesson, e.g. "Restart gives only temporary relief for
 config-regression signatures; go straight to rollback."}
 ```
 
-`DIAGNOSIS` is the **agent's** diagnosis, never the simulator's ground-truth type.
+`DIAGNOSIS` and `SIGNATURE` are the **agent's** words, never the simulator's ground-truth type. The `SIGNATURE` line is written by the `decide` LLM (a `signature` field on `Recommendation`), generalized so it carries no machine IDs, percentages or version strings — it is what lets the reranker line up a new incident with past ones (measured: Section 14). If the LLM is unavailable, `learn` falls back to a deterministic template built from the evidence flags.
 
 Retain call:
 
@@ -394,14 +398,16 @@ client.retain(
 
 Both are deterministic code (no LLM decides whether to use memory). Both are skipped when memory is OFF.
 
-**Query construction — deliberately paraphrased, never keyword-copied** (proves semantic matching):
+**Query construction — observed signals only, paraphrased, never keyword-copied** (proves semantic matching, not string matching):
 
 ```
-"machine showing {onset} throughput decline with {key signals, paraphrased},
-config {changed/unchanged} recently, calibration {age}"
+"{onset} output decline {with/after <each POSITIVE signal found in the evidence>}"
+e.g. "gradual output decline beginning shortly after a new configuration was deployed;
+      axis drive response timeouts"
 ```
 
-Paraphrasing is done by a small deterministic synonym table in `memory/render.py` (e.g. "servo timeout" → "axis drive not responding in time"), not an LLM, so it's reproducible.
+- Only signals that are **present** go in the query. Clauses like "no config change" or "calibration recent" pull in exactly the incidents where config/calibration mattered (measured in Phase 0.5: they caused a false match to outrank a true one).
+- Paraphrasing uses a small deterministic synonym table in `memory/render.py` (e.g. "servo timeout" → "axis drive response timeouts"), not an LLM, so it's reproducible. Machine IDs, version strings and exact numbers never go in the query.
 
 **Recall call:**
 
@@ -414,12 +420,14 @@ resp = client.recall(
 )
 ```
 
-**Match scoring** (verified against SDK: each result has `scores.final`, `scores.reranker` (0–1), `scores.semantic` (cosine 0–1, null if not found by the semantic arm), `scores.keyword`):
-- Group raw facts (`world`/`experience`) by `metadata.incident_id` → one **incident match** per past incident; match score = max `scores.semantic` over its facts (fall back to `scores.reranker` if semantic is null).
-- Keep matches with score ≥ `MEMORY_MATCH_THRESHOLD` (initial **0.7**, **calibrated in Phase 0.5** — Hindsight documents that scores are relative per query, so this must be tuned against observed values).
+**Match scoring** (each result has `scores.final`, `scores.reranker` (0–1), `scores.semantic` (cosine 0–1), `scores.keyword`). Measured in Phase 0.5: semantic cosine is ~0.66–0.78 for *every* factory incident, true or false, so it cannot gate matches; the cross-encoder reranker can.
+- Group raw facts (`world`/`experience`) by `metadata.incident_id` → one **incident match** per past incident, with `rerank = max scores.reranker` and `similarity = max scores.semantic` over its facts, and `rank` = position of its first fact.
+- **Match rule:** `rerank ≥ MEMORY_MATCH_REL_RERANK × top_rerank` (0.15) **and** `rerank ≥ MEMORY_MATCH_MIN_RERANK` (0.05, lets recall abstain when nothing is relevant). Measured: weakest true match ≥ 0.245 × top, strongest false match ≤ 0.056 × top.
+- **UI shows** rank (#1, #2…) and the reranker-based strength; the `decide` LLM still makes the final call on fit (prompt rule 3), so a borderline match is visible but can be rejected with a reason.
+- Both values are re-checked by `simulate.py` on the full incident set in Phase 5.
 - `observation` results are shown separately as **"Learned patterns"** (consolidated beliefs like "restart only gives temporary relief for config regressions"). Consolidation runs in the background after retain, so observations may lag a few seconds; the demo does not depend on them being instant.
 
-Output to state: `memory_results = [{incident_id, score, summary, final_action, outcome}]`, `learned_patterns = [str]`.
+Output to state: `memory_results = [{incident_id, rank, rerank, similarity, summary, final_action, outcome}]`, `learned_patterns = [str]`.
 
 ### 6.4 Memory Toggle Semantics
 
@@ -535,6 +543,7 @@ class Recommendation(BaseModel):
     action: Literal["ROLLBACK_CONFIG", "RESTART_MACHINE", "RECALIBRATE_SENSOR",
                     "RESTART_GATEWAY", "CLEAR_CACHE", "ESCALATE_HUMAN"]
     diagnosis: str                      # short label, e.g. "config regression"
+    signature: str                      # generalized one-liner, no IDs/numbers (episode SIGNATURE)
     confidence: float = Field(ge=0, le=1)
     reasoning: str
     cited_incidents: list[str] = []     # must be ⊆ memory_results incident_ids
@@ -546,9 +555,11 @@ class Recommendation(BaseModel):
 ### 7.5 LLM Client (llm.py)
 
 - `openai` SDK pointed at Groq (`base_url="https://api.groq.com/openai/v1"`), imported via `from langfuse.openai import OpenAI` so every call is traced automatically.
-- Primary `openai/gpt-oss-120b`; retry ×2 with backoff (1 s, 2 s); then fallback model (`LLM_FALLBACK_MODEL`, default `qwen/qwen3-32b`) with the same retries; a **total time budget per call** (default 30 s) caps retries; on total failure → `ESCALATE_HUMAN` recommendation with reasoning "LLM unavailable" (graceful degradation, never crash).
-- **Fallback model availability:** Groq's catalogue changes; `spike_groq.py` lists `GET /models` and confirms the fallback is served (candidates seen in reference code: `qwen/qwen3-32b`, `qwen/qwen3.6-35b-a3b`, `openai/gpt-oss-20b`). It's an env var, so swapping is a config change.
-- **Malformed tool calls** (organizers explicitly warned). Groq rejects them with **HTTP 400, `error.code == "tool_use_failed"`, and the raw model output in `error.failed_generation`** (same handling as Hindsight's own Groq provider). Order: (1) try to salvage — parse `failed_generation` as `{name, arguments}` and, if it validates against a known tool, use it; (2) else retry once; (3) else inject a corrective system message ("Your last tool call was malformed: … Call one of: …"). JSON-parse failures of `arguments` and unknown tool names go through the same path.
+- Primary `openai/gpt-oss-120b`; retry ×2 with backoff (1 s, 2 s); then fallback model (`LLM_FALLBACK_MODEL`, default `qwen/qwen3.8-27b`) with the same retries; a **total time budget per call** (default 30 s) caps retries; on total failure → `ESCALATE_HUMAN` recommendation with reasoning "LLM unavailable" (graceful degradation, never crash).
+- **Fallback model availability (measured):** Groq no longer serves `qwen/qwen3-32b` (HTTP 404 `model_not_found`). Served chat models on 2026-09-28: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`, `openai/gpt-oss-safeguard-20b`, `allam-2-7b`. Chosen fallback: `qwen/qwen3.8-27b` (different model family from the primary → independent failure modes; tool calling verified; ~0.3–0.4 s per call). Re-run `spike_groq.py` before the demo; it's an env var.
+- **Parallel tool calls:** both models may return several tool calls in one turn (qwen did). Execute all of them, append each result, and count each toward the 10-call cap.
+- **Argument validation:** qwen silently coerced invalid arguments (asked for machine `Z9`, sent `M1`) instead of erroring. Validate every tool call's arguments with Pydantic before executing, regardless of what the API accepted.
+- **Malformed tool calls** (organizers explicitly warned). Groq rejects them with **HTTP 400, `error.code == "tool_use_failed"`, and the raw model output in `error.failed_generation`** (same handling as Hindsight's own Groq provider). Measured: in practice `failed_generation` often holds **plain refusal text**, not a JSON tool call. Order: (1) if `failed_generation` parses as `{name, arguments}` that validates against a known tool, use it; (2) otherwise treat it as the model's text reply, retry once; (3) else inject a corrective system message ("Your last tool call was malformed: … Call one of: …"). JSON-parse failures of `arguments` and unknown tool names go through the same path.
 - **Reasoning text:** send `extra_body={"include_reasoning": False}` for reasoning models, and still strip any `<think>…</think>` block from content before parsing (belt and braces).
 - Structured output for `decide`: request JSON, validate with `Recommendation`; on validation failure → one corrective retry (guardrail 1/3).
 
@@ -561,7 +572,7 @@ class Recommendation(BaseModel):
 3. **Action whitelist** (6 actions, 5.4) — invalid actions rejected + corrective retry; never executed.
 4. **Dependency retry + fallback** — LLM retry/model fallback (7.5); Hindsight failures degrade to "memory unavailable" for recall and outbox-retry for retain (6.2).
 5. **Simulator state validation** — can't trigger on an already-degraded machine; **one active incident at a time** (keeps the demo legible); can't act on a closed incident. Violations return a structured `error` event, not a 500.
-6. **Memory match threshold** — `MEMORY_MATCH_THRESHOLD` (initial 0.7, calibrated in Phase 0.5); below it, results are not shown as "matches".
+6. **Memory match rule** — reranker-relative gate (`MEMORY_MATCH_REL_RERANK` 0.15 × top, floor `MEMORY_MATCH_MIN_RERANK` 0.05; measured in Phase 0.5); below it, results are not shown as "matches".
 
 ---
 
@@ -626,7 +637,7 @@ Next.js App Router + Tailwind + shadcn/ui + Recharts. **Dark theme ops aesthetic
 - **Dashboard (`/`):** machine cards M1–M5 (status color, throughput, sparkline). Left rail: 4 predefined buttons, **CUSTOM BUILDER** (modal), **SURPRISE ME**, reset (behind a confirm).
 - **Incident panel** (slides in on the dashboard when an incident is active — the judge never leaves the page):
   - **Investigation Trace** — terminal-style live log of tool calls/results; memory events highlighted in a distinct color. Replaces a chat window.
-  - **Memory panel** — hints, matched episodes with score badges, learned patterns. Memory OFF → "Memory disabled — agent reasoning from evidence only."
+  - **Memory panel** — hints, matched episodes with rank + match-strength badges, learned patterns. Memory OFF → "Memory disabled — agent reasoning from evidence only."
   - **Recommendation card** — action, confidence bar, reasoning, cited incidents (clickable → Memory Browser), actions known to fail (red).
   - **Action buttons** — the 6 whitelisted actions (recommended one highlighted) + **IGNORE**.
 - **Memory Browser (`/memory`):** all episodes and lessons; expand to see the exact text retained to Hindsight and its metadata.
@@ -670,7 +681,7 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 
 1. **0:00** Healthy factory, `memoryops-live` bank (empty). "MemoryOps runs production, and it gets better at its job every day."
 2. **0:15** Trigger config regression on M3 → cold investigation trace streams (many tool calls) → [~0.6] confidence → judge applies ROLLBACK → verify → recovery → **memory written — the episode appears in Memory Browser.**
-3. **1:15** Trigger config regression again — **on M4, different log phrasing** → hints steer investigation (fewer tool calls) → match [≥0.7] cites INC-001 → resolved in [~3 sim-min]. "It matched the signature, not the machine."
+3. **1:15** Trigger config regression again — **on M4, different log phrasing** → hints steer investigation (fewer tool calls) → INC-001 ranked #1 match, cited → resolved in [~3 sim-min]. "It matched the signature, not the machine."
 4. **1:45** Sabotage: trigger config regression, apply **RESTART** instead → partial recovery → **re-degrades on stage** → lesson written → agent re-investigates, recommends rollback, lists RESTART under "known to fail".
 5. **2:15** Sensor drift → agent does NOT replay "rollback" (different signature) → recommends recalibration. Discrimination proven.
 6. **2:40** Learning tab: MTTR curve [cold → warm], tool calls falling, confidence rising.
@@ -684,8 +695,9 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 **Phase 0 — Scaffold.** Repo layout (Section 4), `pyproject.toml` + lockfile, `.env.example` (Section 15), FastAPI skeleton with `/api/health`, Next.js skeleton. ✅ `uv sync` (or `pip install -e .`) + `uvicorn backend.main:app` boots; `/api/health` reports each dependency.
 
 **Phase 0.5 — Spikes (first 1–2 hours of Phase 2 work, do before building nodes).**
-- `spike_hindsight.py`: create bank, retain 3 synthetic episodes (2 config regression with different wording, 1 sensor drift), recall with a paraphrased query. ✅ Record: retain latency; recall-immediately-after-retain works; score distributions (`semantic`, `reranker`, `final`) for true vs false matches → **set `MEMORY_MATCH_THRESHOLD`**; observation lag.
-- `spike_groq.py`: list available models; tool-calling round trip on primary + fallback; provoke a malformed tool call and confirm the `tool_use_failed` / `failed_generation` shape; confirm `include_reasoning: false` suppresses reasoning. ✅ Record: fallback model choice, error shapes, typical latency.
+- `spike_hindsight.py`: create bank, retain 3 synthetic episodes (2 config regression with different wording, 1 sensor drift), recall with a paraphrased query. ✅ Record: retain latency; recall-immediately-after-retain works; score distributions (`semantic`, `reranker`, `final`) for true vs false matches; observation lag. **Done — results in Section 14.**
+- `spike_recall_design.py sig|nosig`: 5 episodes (all 4 classes), with vs without a `SIGNATURE:` line, observed-signals-only queries. ✅ Chooses the record format and match rule. **Done — results in Section 14.**
+- `spike_groq.py`: list available models; tool-calling round trip on primary + fallback; provoke a malformed tool call and confirm the `tool_use_failed` / `failed_generation` shape; confirm `include_reasoning: false` suppresses reasoning. ✅ Record: fallback model choice, error shapes, typical latency. **Done — results in Section 14.**
 
 **Phase 1 — Simulator.** ✅ `pytest tests/test_simulator.py`: each of 4 types triggers on random machines; metrics degrade per taxonomy; every cell of the effects matrix (5.5) produces the specified effect incl. re-degradation timing; IGNORE cascades; custom builder maps to the right class incl. `ambiguous`; sim clock math; SQLite persists everything.
 
@@ -701,11 +713,29 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 
 ---
 
-## 14. Values To Be Measured (fill in after simulations)
+## 14. Measured Values
+
+### 14.1 Phase 0.5 spike results (2026-09-28, Hindsight Cloud + Groq)
+
+| Question | Result |
+|---|---|
+| Sync `retain` latency | 2.7–4.3 s per episode (~3.3k Hindsight tokens each) |
+| Recallable immediately after retain? | Yes |
+| `recall` latency | 0.13–0.16 s |
+| Observation lag | First observation visible ~1 s after the third retain |
+| Semantic cosine, true vs false matches | Overlapping: true 0.711–0.759, false 0.688–0.725 → **unusable as a gate** |
+| Reranker with `SIGNATURE` line + observed-signals query | True incident ranked #1 for 5/5 queries; weakest true ≥ 0.245 × top; strongest false ≤ 0.056 × top |
+| Reranker without `SIGNATURE` line | 4/5 correct at #1; one query had a false match at 0.927 × top → signature line adopted |
+| Groq fallback `qwen/qwen3-32b` | **Gone** (404). Using `qwen/qwen3.8-27b` |
+| Groq latency (tool call) | gpt-oss-120b 0.5 s (2.1 s for a long answer); qwen3.8-27b 0.3–0.4 s |
+| Malformed tool call | HTTP 400 `tool_use_failed`; `failed_generation` = refusal prose, not JSON |
+| `include_reasoning: false` | No reasoning field and no `<think>` in content on either model |
+
+### 14.2 Still to be measured
 
 | Item | Initial value | Set by |
 |---|---|---|
-| `MEMORY_MATCH_THRESHOLD` | 0.7 on `scores.semantic` | Phase 0.5 spike |
+| `MEMORY_MATCH_REL_RERANK` / `MEMORY_MATCH_MIN_RERANK` | 0.15 / 0.05 (from 14.1) | Re-check in Phase 5 `simulate.py` over ≥20 incidents |
 | `SIM_SPEED` | 10 | Phase 4 demo rehearsal |
 | `VERIFY_WINDOW_SIM_S` | 180 | Phase 1 (must exceed max re-degrade delay) |
 | `ESCALATION_PENALTY_SIM_S` | 1800 | Phase 1 |
@@ -726,18 +756,20 @@ HINDSIGHT_BANK_SEEDED=memoryops-seeded
 GROQ_API_KEY=
 GROQ_BASE_URL=https://api.groq.com/openai/v1
 LLM_PRIMARY_MODEL=openai/gpt-oss-120b
-LLM_FALLBACK_MODEL=qwen/qwen3-32b
+LLM_FALLBACK_MODEL=qwen/qwen3.8-27b
 # Langfuse
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
-LANGFUSE_HOST=https://cloud.langfuse.com
+LANGFUSE_HOST=https://us.cloud.langfuse.com
 # Simulator / agent
 SIM_SPEED=10
 VERIFY_WINDOW_SIM_S=180
 ESCALATION_PENALTY_SIM_S=1800
-MEMORY_MATCH_THRESHOLD=0.7
+MEMORY_MATCH_REL_RERANK=0.15
+MEMORY_MATCH_MIN_RERANK=0.05
 MAX_TOOL_CALLS=10
 MAX_ATTEMPTS=3
+LLM_CALL_BUDGET_S=30
 SQLITE_PATH=./data/memoryops.db
 # Frontend
 NEXT_PUBLIC_API_BASE=http://localhost:8000

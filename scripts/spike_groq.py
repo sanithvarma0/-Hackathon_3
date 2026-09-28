@@ -8,10 +8,11 @@ Answers (BUILD_PLAN.md Section 13, Phase 0.5):
   4. Does include_reasoning=False keep reasoning text out of the content?
   5. Typical latency.
 
-Run: uv run python scripts/spike_groq.py
+Run: uv run python scripts/spike_groq.py [model_id ...]
 """
 
 import json
+import sys
 import time
 
 import openai
@@ -106,10 +107,13 @@ def tool_round_trip(client: OpenAI, model: str) -> None:
             tools=TOOLS,
             extra_body={"include_reasoning": False},
         )
+        fmsg = follow.choices[0].message
         print(
-            f"follow-up latency {time.perf_counter() - t0:.2f}s: "
-            f"{(follow.choices[0].message.content or '')[:200]!r}"
+            f"follow-up latency {time.perf_counter() - t0:.2f}s, "
+            f"finish={follow.choices[0].finish_reason}: {(fmsg.content or '')[:200]!r}"
         )
+        for ftc in fmsg.tool_calls or []:
+            print(f"  follow-up tool_call: {ftc.function.name}({ftc.function.arguments})")
         break
 
 
@@ -148,7 +152,8 @@ def main() -> None:
     if not s.groq_api_key:
         raise SystemExit("GROQ_API_KEY is not set (see .env.example)")
     client = OpenAI(api_key=s.groq_api_key, base_url=s.groq_base_url, timeout=60)
-    models = [s.llm_primary_model, s.llm_fallback_model]
+    # Optional: pass candidate model IDs on the command line to test them instead.
+    models = sys.argv[1:] or [s.llm_primary_model, s.llm_fallback_model]
     list_models(client, models)
     for m in models:
         tool_round_trip(client, m)

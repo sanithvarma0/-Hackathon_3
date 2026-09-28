@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"
     llm_primary_model: str = "openai/gpt-oss-120b"
-    llm_fallback_model: str = "qwen/qwen3-32b"
+    llm_fallback_model: str = "qwen/qwen3.8-27b"
     llm_call_budget_s: float = 30.0
 
     # Langfuse
@@ -36,7 +36,11 @@ class Settings(BaseSettings):
     sim_speed: float = Field(10.0, gt=0)
     verify_window_sim_s: int = 180
     escalation_penalty_sim_s: int = 1800
-    memory_match_threshold: float = Field(0.7, ge=0, le=1)
+    # A past incident counts as a memory match when its best reranker score is at least
+    # REL x the top result's reranker score and above MIN (measured in the Phase 0.5 spike:
+    # semantic cosine does not separate true from false matches, the reranker does).
+    memory_match_rel_rerank: float = Field(0.15, ge=0, le=1)
+    memory_match_min_rerank: float = Field(0.05, ge=0, le=1)
     max_tool_calls: int = 10
     max_attempts: int = 3
     sqlite_path: Path = REPO_ROOT / "data" / "memoryops.db"

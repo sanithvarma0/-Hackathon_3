@@ -1,7 +1,9 @@
-# 🔒 TECH STACK — FROZEN (v1.2)
+# 🔒 TECH STACK — FROZEN (v1.3)
 
 All decisions are locked. This is the definitive reference for the rest of the hackathon. BUILD_PLAN.md is the implementation spec; this file is the "what and why".
 
+> **v1.3 changes:** Phase 0.5 spikes run against the real services: fallback model is now `qwen/qwen3.8-27b` (Groq retired `qwen/qwen3-32b`); memory matches are gated on Hindsight's reranker score relative to the top result (semantic cosine measured as non-discriminative). Results: BUILD_PLAN.md Section 14.
+>
 > **v1.2 changes:** reviewed the suggested reference repositories (new section below); "Incident Patterns" mental model is now core; Groq error/reasoning handling pinned to what Hindsight's own Groq provider does; no stack additions — every reviewed framework/template was either a pattern source or rejected.
 >
 > **v1.1 changes:** named the actual Hindsight SDK (`hindsight-client`) and dropped the `hindsight-langgraph` prebuilt nodes; Groq accessed through the OpenAI SDK so Langfuse tracing is a drop-in; human-in-the-loop via LangGraph `interrupt()`; `reflect()` removed from the core path (mental model is a stretch); LLM memory tool removed; node list and repo structure synced with BUILD_PLAN.md.
@@ -19,14 +21,14 @@ All decisions are locked. This is the definitive reference for the rest of the h
 | 5 | **Human-in-the-loop** | LangGraph `interrupt()` + `InMemorySaver` checkpointer | `thread_id = incident_id`, resume with `Command(resume=...)` |
 | 6 | **Harness** | Custom-built (~150 lines) | Reference: `agent-service-toolkit` (JoshuaC215) |
 | 7 | **Protocol** | None — FastAPI REST + one global SSE stream | `sse-starlette`, Last-Event-ID replay |
-| 8 | **LLM** | Groq via OpenAI-compatible API | `openai` SDK, `base_url=https://api.groq.com/openai/v1` · Primary `openai/gpt-oss-120b` · Fallback `qwen/qwen3-32b` (env-configurable; availability confirmed in Phase 0.5) · handles `tool_use_failed` (HTTP 400 + `failed_generation`) · `include_reasoning: false` |
+| 8 | **LLM** | Groq via OpenAI-compatible API | `openai` SDK, `base_url=https://api.groq.com/openai/v1` · Primary `openai/gpt-oss-120b` · Fallback `qwen/qwen3.8-27b` (env-configurable; `qwen/qwen3-32b` is no longer served) · handles `tool_use_failed` (HTTP 400 + `failed_generation`) · `include_reasoning: false` |
 | 9 | **Observability** | Langfuse Cloud (free tier) | `from langfuse.openai import OpenAI` (auto-traces LLM calls) + `@observe` on graph nodes/tools |
 | 10 | **Database** | SQLite | Simulator state, metrics, episode outbox |
 | 11 | **Vector Store** | None | Hindsight is the vector store |
 | 12 | **Semantic Layer** | None | Hindsight's 4-way retrieval (semantic + BM25 + graph + temporal, reranked) |
 | 13 | **Backend** | FastAPI | Python 3.11+, Pydantic v2, `pydantic-settings` |
 | 14 | **Frontend** | Next.js (App Router) + Tailwind + shadcn/ui + Recharts | Ops dashboard, not a chat |
-| 15 | **Guardrails** | 6 custom rules | Pydantic validation, tool-call cap, action whitelist, dependency retry/fallback, simulator state validation, memory match threshold |
+| 15 | **Guardrails** | 6 custom rules | Pydantic validation, tool-call cap, action whitelist, dependency retry/fallback, simulator state validation, memory match rule (reranker-relative) |
 | 16 | **Evaluation** | Custom tracker + headless simulation script | MTTR (sim time), tool calls, confidence, memory hit rate, recommendation accuracy — plotted live |
 | 17 | **Tooling** | `uv` (Python deps + lockfile), `pytest`, `ruff` · `npm` for frontend | Versions pinned by lockfiles at Phase 0 |
 
@@ -67,7 +69,7 @@ All decisions are locked. This is the definitive reference for the rest of the h
 │            │ HINDSIGHT │  │  GROQ    │  │ LANGFUSE │       │
 │            │ retain()  │  │ gpt-oss- │  │ traces   │       │
 │            │ recall()  │  │ 120b →   │  │          │       │
-│            │ mental    │  │ qwen3-32b│  │          │       │
+│            │ mental    │  │ qwen3.8  │  │          │       │
 │            │  model    │  │          │  │          │       │
 │            └──────────┘  └──────────┘  └──────────┘       │
 └────────────────────────────────────────────────────────────┘
@@ -130,7 +132,7 @@ Keep this — you'll need it for the *"Explanation of how Hindsight memory is us
 | "Incident Patterns" mental model | Hindsight writes and maintains the runbook itself from consolidated observations — visible proof the agent is building expertise, not just storing logs |
 | Learn from environment consequences, not human corrections | The official cookbook demos (ClaimsIQ, CableConnect) learn from a human saying "wrong"; ours learns from a trap fix wearing off — our main innovation angle |
 | Synchronous `retain` | The next incident may arrive a minute later on stage — memory must be recallable immediately |
-| Memory match threshold calibrated, not assumed | Hindsight scores are relative per query; the threshold is set from measured score distributions in the Phase 0.5 spike |
+| Memory match rule measured, not assumed | We measured it: semantic cosine is ~0.7 for every factory incident, true or false; Hindsight's cross-encoder reranker separates them (≥4× margin) once each episode carries a generalized `SIGNATURE` line — so matches are gated on reranker score relative to the top result |
 | Simulated clock | MTTR is measured from real agent behavior (tool calls, trap fixes, retries) on a fast-forwarded clock — no invented numbers |
 | `verify` step after every action | A trap fix looks like success for a minute; only watching recovery hold proves the fix, and catching the failure is what produces the lesson |
 | LangGraph `interrupt()` for approval | Least code for pausing a graph mid-run and resuming it from an HTTP call |
