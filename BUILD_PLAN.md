@@ -1,5 +1,7 @@
-# MemoryOps — Build Specification v1.4
+# MemoryOps — Build Specification v1.5
 
+> **v1.5 changes (UI direction):** Section 10 rewritten as the "industrial control room" UI spec — plant-floor SVG world view, right-rail panels, purple reserved for memory, per-incident visual signatures, SSE→UI mapping, designed states, timebox + fallback. Plant topology (5.2) changed to one serial line with a robotic material-handling cell and two network gateways, so the world view reads as a real line and network cascades are visible. Match badges show rank + strength, never raw similarity (per 14.1).
+>
 > **v1.4 changes (production-grade pass):** added the engineering principles that govern every claim (Section 1.1); the **environment adapter boundary** (5.9); a realistic **6-month seeded history** spec (6.6); Section 11 rewritten as a full **evaluation suite** (paired ON/OFF design, seeds, bootstrap CIs, transfer + discrimination + retrieval + calibration metrics, auto-generated report); **engineering quality** (tests, CI, mypy, ADRs, `make`, docker compose, designed error states — Section 17); **Q&A answers backed only by measured results** (Section 18); an explicit **priority stack and anti-scope list** (Section 19). Phases re-cut so evaluation and seeding are first-class (Section 13).
 >
 > **v1.3 changes (Phase 0.5 spikes run against the real services — Section 14):** Groq no longer serves `qwen/qwen3-32b` → fallback is `qwen/qwen3.8-27b`; semantic cosine does **not** separate true from false incident matches, so the 0.7 similarity threshold is replaced by a reranker-relative rule, the episode gains a generalized `SIGNATURE:` line, and recall queries are built from observed signals only; `tool_use_failed` payloads are usually refusal text, not salvageable tool calls; models may emit parallel tool calls and may silently coerce invalid arguments.
@@ -207,15 +209,26 @@ All simulator dynamics and MTTR use **sim time**. `SIM_SPEED` (default `10`) = s
 
 ### 5.2 Machines & Topology
 
-| ID | Profile | Line | Gateway |
-|---|---|---|---|
-| M1 | CNC vertical mill — Haas VF-4, commissioned 2021 | A (1st) | GW-A |
-| M2 | CNC lathe — Mazak QT-250, commissioned 2019 | A (2nd) | GW-A |
-| M3 | Robotic welding cell — Fanuc ARC Mate 100iD, commissioned 2022 | A (3rd) | GW-A |
-| M4 | 5-axis machining center — DMG Mori NVX 5080, commissioned 2020 | B (1st) | GW-B |
-| M5 | Injection molding press — Engel victory 200, commissioned 2018 | B (2nd) | GW-B |
+One serial production line with a robotic material-handling cell, on two network gateways:
 
-"Downstream" = next machines on the same line. Network failures cascade to machines on the same gateway.
+```
+            GW-A (M1, M2, M5)                 GW-B (M3, M4)
+FEED ──▶ M1 ──▶ M2 ──▶ M3 ──▶ M4 ──▶ SHIP
+                  ▲             ▲
+                  └──── M5 ─────┘      (M5 loads/unloads M2 and M4)
+```
+
+| ID | Profile | Role | Gateway |
+|---|---|---|---|
+| M1 | CNC vertical mill — Haas VF-4, commissioned 2021 | line stage 1 | GW-A |
+| M2 | CNC lathe — Mazak QT-250, commissioned 2019 | line stage 2 | GW-A |
+| M3 | Robotic welding cell — Fanuc ARC Mate 100iD, commissioned 2022 | line stage 3 | GW-B |
+| M4 | 5-axis machining center — DMG Mori NVX 5080, commissioned 2020 | line stage 4 | GW-B |
+| M5 | Robotic material-handling cell — ABB IRB 6700 with vision-guided gripper, commissioned 2022 | loads M2 and M4 | GW-A |
+
+- **Downstream** = later stages on the line (M1 → M2 → M3 → M4), plus M2 and M4 for M5.
+- **Network failures** hit every machine on the affected gateway at once (GW-A: 3 machines, GW-B: 2), then starve downstream stages.
+- **Starvation is a line-level effect, not a machine fault:** a degraded stage caps the *line* throughput KPI and dims flow animation downstream, but downstream machines' own health metrics stay normal. So the agent's tools never see a starving machine as a second incident, and the UI still shows the ripple.
 
 ### 5.3 State Model (SQLite)
 
@@ -270,7 +283,7 @@ Each incident type = **stable signature + noisy surface**. Config Regression and
 |---|---|---|---|
 | `config_regression` | config deployed 5–20 sim-min before onset; **gradual** throughput decline 25–45% | machine, drop %, log phrasing variant, onset delay, config version strings | `ROLLBACK_CONFIG` |
 | `sensor_drift` | calibration age > 30 days; sensor variance high; config **unchanged** | machine, drift magnitude, phantom temperature alarms | `RECALIBRATE_SENSOR` |
-| `network_failure` | packet loss 8–15%, latency spikes; **sudden** onset | affected gateway, cascade to 1–2 machines on it | `RESTART_GATEWAY` |
+| `network_failure` | packet loss 8–15%, latency spikes; **sudden** onset on all machines of one gateway | which gateway (GW-A: M1, M2, M5 / GW-B: M3, M4), loss %, latency | `RESTART_GATEWAY` |
 | `resource_exhaustion` | memory climbing over 3+ days in history; OOM-kill events | machine, climb rate | `CLEAR_CACHE` |
 
 **Action whitelist (exhaustive):** `ROLLBACK_CONFIG`, `RESTART_MACHINE`, `RECALIBRATE_SENSOR`, `RESTART_GATEWAY`, `CLEAR_CACHE`, `ESCALATE_HUMAN`.
@@ -315,7 +328,7 @@ def generate_incident(type, machine=None, custom=None) -> Incident:
 
 **Degradation dynamics:** gradual types step down over 300–600 sim-s (30–60 s real at 10×). `network_failure` is instant. **Detection:** the incident is "detected" when throughput crosses the alert threshold (< 90%); the agent run starts then. `onset_ts` is when degradation began.
 
-**IGNORE:** the `/ignore` endpoint applies the cascade immediately (throughput drops a further 10–20% and 1–2 downstream machines degrade) and the incident stays open awaiting action. No automatic 8-minute timer in demo mode — a judge reading the screen should never trigger a cascade by accident. (Optional `AUTO_CASCADE_SIM_S` for non-demo runs.)
+**IGNORE:** the `/ignore` endpoint applies the escalation immediately (the affected machine(s) drop a further 10–20% and go critical; line throughput falls further, so downstream flow visibly starves — 5.2) and the incident stays open awaiting action. No automatic 8-minute timer in demo mode — a judge reading the screen should never trigger a cascade by accident. (Optional `AUTO_CASCADE_SIM_S` for non-demo runs.)
 
 ### 5.7 Custom Incident Builder (structured, no free text)
 
@@ -684,7 +697,7 @@ POST /api/admin/reset                 # {bank: "live"|"seeded", wipe_memory: boo
 **SSE event types (contract with frontend):**
 
 ```
-state_changed        {machines: [...], oee, alerts}               # every ~1 s real
+state_changed        {machines: [...], gateways: [...], line_throughput, oee, alerts}  # ~1 Hz
 incident_triggered   {incident}
 investigation_start  {incident_id, attempt}
 memory_hints         {query, hints: [...]}                        # recall_hints
@@ -710,35 +723,127 @@ error                {code, message}                              # never crash
 
 ---
 
-## 10. Frontend (Phase 4)
+## 10. Frontend (Phase 4) — Industrial Control Room UI
 
-> **UI direction:** the team's visual direction is being finalized and will be folded in here before Phase 4. The layout below is the functional baseline (what must exist), not the visual design.
+### 10.1 Philosophy
 
-Next.js App Router + Tailwind + shadcn/ui + Recharts. **Dark theme ops aesthetic.**
+A dark industrial control room (SCADA / Grafana style): a **spatial plant floor with live signals and failures you can see**. Not a chatbot, not a game.
 
-### 10.1 Layout
+**Purple is reserved exclusively for memory.** Every element that comes from Hindsight (memory hints, matches, known-to-fail chips, lessons, the runbook, memory toasts, the MEMORY toggle itself) is purple, and nothing else is. Judges learn the colour in the first minute, and from then on the memory story is visible at a glance. When memory is OFF, purple elements turn grey, so the before/after is visual too.
 
-- **Header:** "MemoryOps — Self-Learning Production Incident Commander" · **🧠 MEMORY [ON/OFF]** (prominent) · active bank badge (live / seeded) · KPI strip (OEE, throughput, active alerts) · sim clock.
-- **Dashboard (`/`):** machine cards M1–M5 (status color, throughput, sparkline). Left rail: 4 predefined buttons, **CUSTOM BUILDER** (modal), **SURPRISE ME**, reset (behind a confirm).
-- **Incident panel** (slides in on the dashboard when an incident is active — the judge never leaves the page):
-  - **Investigation Trace** — terminal-style live log of tool calls/results; memory events highlighted in a distinct color. Replaces a chat window.
-  - **Memory panel** — hints, matched episodes with rank + match-strength badges, learned patterns. Memory OFF → "Memory disabled — agent reasoning from evidence only."
-  - **Recommendation card** — action, confidence bar, reasoning, cited incidents (clickable → Memory Browser), actions known to fail (red).
-  - **Action buttons** — the 6 whitelisted actions (recommended one highlighted) + **IGNORE**.
-- **Memory Browser (`/memory`):** all episodes and lessons; expand to see the exact text retained to Hindsight and its metadata.
-- **Learning (`/learning`, Recharts):** MTTR per incident, confidence progression, tool calls per incident, memory hit rate, recommendation accuracy — each split by memory ON/OFF, filterable by diagnosis. Headline: "The agent is learning."
+### 10.2 Layout (single screen, judge never navigates away during the demo)
 
-### 10.2 Custom Builder Modal
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ MEMORYOPS · SECTOR 7 │ OEE · LINE THROUGHPUT · ALERTS · SIM CLOCK │  │
+│                      │ BANK: live|seeded        🧠 MEMORY [ON/OFF] │  │
+├─────────────────────────────────────────┬────────────────────────────┤
+│                                         │ 🔍 INVESTIGATION TRACE     │
+│   PLANT FLOOR  (world view, ~65%)       │    streams live            │
+│   FEED → M1 → M2 → M3 → M4 → SHIP       ├────────────────────────────┤
+│              ▲    M5    ▲               │ 🧠 MEMORY  (hints, matches,│
+│   GW-A · · · · · · GW-B  (net links)    │    learned patterns)       │
+│                                         ├────────────────────────────┤
+│                                         │ ▶ RECOMMENDATION + ACTIONS │
+├─────────────────────────────────────────┴────────────────────────────┤
+│ [CONFIG REGRESSION] [SENSOR DRIFT] [NETWORK] [RESOURCE] [CUSTOM]     │
+│ [SURPRISE ME] [LOAD 6-MONTH OPS HISTORY]  ·  FLOOR · MEMORY · LEARNING│
+└──────────────────────────────────────────────────────────────────────┘
+```
 
-Machine (M1–M5) · config_changed [Yes/No] · minutes_before slider · throughput delta slider · error rate slider · temperature [Normal/High] · calibration [Fresh/30+ days] · network [Normal/Degraded] · memory trend [Flat/Climbing] · **[RUN CUSTOM INCIDENT]**. No free-text field anywhere.
+- Designed for 1920×1080 and 1440×900 (laptop + projector). Trace text ≥ 14px; high contrast for projectors.
+- Reset lives in a small overflow menu with a confirm dialog, never next to the trigger buttons.
+- Trigger buttons disable while an incident is active (mirrors guardrail 5), with a tooltip saying why.
 
-### 10.3 Behavior
+### 10.3 Plant Floor (hand-rolled SVG)
 
-- Initial load via `/api/state`; afterwards everything is SSE (`state_changed` ticks replace polling).
-- `re_degradation` animates the machine card flashing down again.
-- Trigger buttons are disabled while an incident is active (mirrors guardrail 5).
+- **Nodes:** each machine shows name + short profile, throughput bar, alert count, 60-point sparkline, and a small gauge (memory % for M-nodes). Gateways are separate small nodes; network links are faint dashed lines to each machine they serve.
+- **States** (never colour alone — each also has an icon, a label and, for critical, a pulse): healthy `#3FB950` ● · degraded `#D29922` ▲ · critical `#F85149` ✖ pulsing · recovering / verifying `#58A6FF` ↻.
+- **Flow:** animated `stroke-dashoffset` dots on line links; flow slows and dims downstream of a degraded stage (line-level starvation, 5.2).
+- **Trace-linked focus:** when a `tool_call` targets a machine, that node gets a blue focus ring, so the audience sees *where* the agent is looking. (Blue, not purple: this is the agent, not memory.)
 
----
+**Visual signature per incident class (must be distinguishable without reading text):**
+
+| Class | Visual |
+|---|---|
+| `config_regression` | gradual dim of one node over ~30–60 s real time; small "cfg" event tick appears on its sparkline |
+| `sensor_drift` | jittery sparkline + phantom temperature alarm badges that flicker |
+| `network_failure` | **gateway links turn red first**, then all machines on that gateway drop at once, then downstream flow dims |
+| `resource_exhaustion` | the node's memory gauge fills toward red, then OOM badge |
+
+**Re-degradation (money shot):** the "recovered" machine flashes red ×3, drops, and a toast appears: *"RESTART_MACHINE gave only temporary relief — re-degraded after 90 s."* followed by a purple toast when the lesson is written to memory.
+
+### 10.4 Right-Rail Panels
+
+1. **Investigation trace** — terminal style, one line per step, streamed over SSE: `▸ get_recent_events(M3, 30m)` → collapsible result. Memory lines (`🧠 recall_hints`, `🧠 search_memory`, `🧠 retain`) are purple. Guardrail/retry lines are amber. Auto-scrolls; pauses scrolling when the user scrolls up.
+2. **Memory panel** (purple) —
+   - *Hints* used to steer the investigation.
+   - *Matched incidents* as chips: `INC-001 · #1 · strong` — rank plus strength from the match rule (6.3). Tooltip shows raw reranker/semantic scores, diagnosis, final action, outcome, date, operator (seeded). Clicking opens it in the Memory Browser. **No raw similarity numbers as badges** — we measured them as non-discriminative (14.1).
+   - *Learned patterns* (observations).
+   - Memory OFF → grey panel: "Memory disabled — agent reasoning from evidence only."
+3. **Recommendation card** — slides in on `recommendation`. States:
+   - `recommending`: action, diagnosis, confidence bar, reasoning, cited incidents (purple chips), **⚠ known to fail** chips (purple border, from memory).
+   - `awaiting action`: buttons — recommended action **filled**, other whitelisted actions **outline**, IGNORE and ESCALATE separated.
+   - `verifying`: progress bar over the verify window (`verifying recovery… 12 s`), machine node shows the blue recovering state.
+   - `outcome`: resolved ✓ with MTTR (sim) and tool calls, or re-degraded ✖ → card returns to `recommending` for the next attempt.
+
+### 10.5 Tabs
+
+- **FLOOR** — the layout above.
+- **MEMORY BROWSER** — every episode and lesson: list (ID, class, machine, outcome, date, operator) → expand to the exact text retained to Hindsight + metadata + "pending sync" badge if in the outbox. Side panel: **"Runbook the agent wrote itself"** — the Incident Patterns mental model (6.5), purple, with last-updated time.
+- **LEARNING** (Recharts) — titled **"The agent is learning"**:
+  - Primary: the latest committed eval report (`GET /api/eval/latest`): recommendation accuracy, MTTR, tool calls by exposure (1st, 2nd, 3rd+), **memory ON (purple) vs OFF (grey)** with 95% CI bands.
+  - Secondary: this session's live incidents as points over the same axes.
+  - No hardcoded numbers anywhere; axis labels and captions come from the data.
+
+### 10.6 Custom Builder Modal (structured, no free text)
+
+Machine ▾ (M1–M5) · config changed [Y/N] + minutes-before slider · throughput Δ slider (−50…−5) · error-rate slider · temperature [Normal/High] · calibration [Fresh/30+ days] · network [Normal/Degraded] · memory trend [Flat/Climbing] · **[RUN]**. A small "signal preview" shows which signals will be present — never the class the simulator will assign.
+
+### 10.7 Design Tokens
+
+| Token | Value | Use |
+|---|---|---|
+| `bg` | `#0B0F14` | page |
+| `panel` | `#11161D` | panels, nodes |
+| `border` | `#232B36` | dividers |
+| `text` / `text-muted` | `#E6EDF3` / `#8B949E` | copy |
+| `healthy` | `#3FB950` | machine OK |
+| `degraded` | `#D29922` | warnings, retries |
+| `critical` | `#F85149` | failures |
+| `recovering` / `focus` | `#58A6FF` | verifying, agent focus ring |
+| **`memory`** | **`#A371F7`** | **anything from Hindsight — nothing else** |
+| `memory-off` | `#6E7681` | memory elements when memory is OFF |
+
+Monospace for trace, IDs and numbers; system sans for everything else (no font CDN).
+
+### 10.8 SSE → UI Mapping
+
+| Event | UI reaction |
+|---|---|
+| `state_changed` | update nodes, links, KPIs (≈1 Hz) |
+| `incident_triggered` | focus the node, pulse its zone, open the right rail |
+| `investigation_start` | trace header `Attempt n` |
+| `memory_hints` / `memory_skipped` | purple hint lines / grey "memory disabled" line |
+| `tool_call` / `tool_result` | trace lines; blue focus ring on the targeted node |
+| `memory_search` / `memory_results` | purple trace line; memory panel fills with chips |
+| `recommendation` | card slides in (`recommending`) |
+| `awaiting_action` | action buttons enable |
+| `action_executed` / `verifying` | card → `verifying`; node → recovering |
+| `re_degradation` | red flash ×3 + toast |
+| `lesson_written` / `memory_written` | purple toast; Memory Browser gains a row |
+| `runbook_updated` | runbook panel refreshes with a purple highlight |
+| `outcome` | card → `outcome` |
+| `metrics_updated` | Learning tab adds the live point |
+| `error` | calm designed error card (17.4) — **never a crash, never a stack trace** |
+
+### 10.9 Tech, Timebox & Fallback
+
+- Next.js (App Router) + Tailwind + shadcn/ui + Recharts + **hand-rolled SVG**. No game engine, no canvas library, no Three.js.
+- Animations are CSS (`stroke-dashoffset`, keyframes); React re-renders only on SSE state (~1 Hz), never per animation frame.
+- **Timebox:** 1 day for the plant floor, 1 day for the panels + tabs.
+- **Fallback if the floor overruns:** a clean machine-card grid in line order with arrow connectors and the same states/colours — every panel, event mapping and demo beat still works.
+- **Non-negotiable:** the memory panel, the recommendation card states, and the Learning charts.
 
 ## 11. Evaluation Suite (the differentiator)
 
