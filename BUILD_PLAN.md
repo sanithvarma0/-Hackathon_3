@@ -1,5 +1,7 @@
-# MemoryOps — Build Specification v1.5
+# MemoryOps — Build Specification v1.6
 
+> **v1.6 changes (Phase 1 built):** `execute_action` returns an `ActionReceipt` (confirmation only) instead of the effect — returning the effect would leak ground truth to the agent; `verify` now infers the effect from a `RecoveryObservation`. Trap fixes recover to 90–94% (looks fixed) before re-degrading, instead of an obviously-partial 65–75%. Simulator API (5.8) updated to the implemented control plane.
+>
 > **v1.5 changes (UI direction):** Section 10 rewritten as the "industrial control room" UI spec — plant-floor SVG world view, right-rail panels, purple reserved for memory, per-incident visual signatures, SSE→UI mapping, designed states, timebox + fallback. Plant topology (5.2) changed to one serial line with a robotic material-handling cell and two network gateways, so the world view reads as a real line and network cascades are visible. Match badges show rank + strength, never raw similarity (per 14.1).
 >
 > **v1.4 changes (production-grade pass):** added the engineering principles that govern every claim (Section 1.1); the **environment adapter boundary** (5.9); a realistic **6-month seeded history** spec (6.6); Section 11 rewritten as a full **evaluation suite** (paired ON/OFF design, seeds, bootstrap CIs, transfer + discrimination + retrieval + calibration metrics, auto-generated report); **engineering quality** (tests, CI, mypy, ADRs, `make`, docker compose, designed error states — Section 17); **Q&A answers backed only by measured results** (Section 18); an explicit **priority stack and anti-scope list** (Section 19). Phases re-cut so evaluation and seeding are first-class (Section 13).
@@ -130,7 +132,7 @@ The repo root **is** the project (no extra `memoryops/` folder).
 │   ├── events.py               # event bus: ring buffer, SSE fan-out, Last-Event-ID replay
 │   ├── llm.py                  # Groq client (OpenAI SDK) + retry + fallback + Langfuse
 │   ├── guardrails.py           # the 6 guardrails
-│   ├── schemas.py              # Pydantic models: Recommendation, ActionResult, API payloads
+│   ├── schemas.py              # Pydantic contracts: metrics, events, ActionReceipt, incidents, API payloads
 │   ├── adapters/
 │   │   ├── base.py             # EnvironmentAdapter Protocol — the agent's only view (5.9)
 │   │   ├── simulator.py        # implementation backed by the simulator
@@ -292,10 +294,10 @@ Each incident type = **stable signature + noisy surface**. Config Regression and
 
 | Type ↓ / Action → | ROLLBACK_CONFIG | RESTART_MACHINE | RECALIBRATE_SENSOR | RESTART_GATEWAY | CLEAR_CACHE |
 |---|---|---|---|---|---|
-| `config_regression` | **full** | partial → 65–75%, **re-degrades after 60–120 sim-s** | none | none | none |
+| `config_regression` | **full** | temporary relief → 90–94% (**looks fixed**), **re-degrades after 60–120 sim-s** | none | none | none |
 | `sensor_drift` | none (config never wrong) | none | **full** | none | none |
 | `network_failure` | none | none (machine fine, network broken) | none | **full** (all affected machines) | none |
-| `resource_exhaustion` | none | partial → ~90%, **re-degrades after 120–150 sim-s** | none | none | **full** |
+| `resource_exhaustion` | none | temporary relief → 90–95% (**looks fixed**), **re-degrades after 120–150 sim-s** | none | none | **full** |
 
 - `ESCALATE_HUMAN` (any type): incident closed as `escalated`; a fixed `ESCALATION_PENALTY_SIM_S` (default 1800) is added to MTTR to reflect handing off to an on-call engineer.
 - `none` = metrics unchanged; the incident keeps degrading.
@@ -344,20 +346,28 @@ Classification (first match wins; the agent never sees the result):
 ### 5.8 Simulator API (control plane for FastAPI + eval harness; read/act side exposed to the agent only via the adapter, 5.9)
 
 ```python
-class Simulator:
-    def get_machine_metrics(machine_id) -> dict          # current snapshot
-    def get_metric_history(machine_id, metric, window_hours) -> list[dict]
-    def get_recent_events(machine_id, window_min) -> list[dict]
-    def get_error_logs(machine_id, window_min) -> list[str]
+class Simulator:                                         # backend/simulator/engine.py
+    # agent-facing (exposed only through SimulatorAdapter, 5.9)
+    def get_machine_metrics(machine_id) -> MachineMetrics
+    def get_metric_history(machine_id, metric, window_hours) -> list[MetricPoint]  # <= 60 points
+    def get_recent_events(machine_id, window_minutes) -> list[Event]   # incl. its gateway
+    def get_error_logs(machine_id, window_minutes) -> list[str]        # WARN and above
+    def execute_action(incident_id, action) -> ActionReceipt           # confirmation only
+    def observe_recovery(incident_id, window_sim_s) -> RecoveryObservation
+    # control plane (API, eval harness, dashboard)
     def trigger_incident(type=None, machine=None, custom=None) -> Incident
-    def execute_action(incident_id, action) -> ActionResult  # per effects matrix
-    def ignore(incident_id) -> None                      # cascade
-    def tick() -> None                                   # advance sim time (background task)
-    def machine_status_all() -> list                     # dashboard
-    def reset() -> None
+    def begin_wait(incident_id)          # recommendation shown; human wait excluded from MTTR
+    def close_incident(incident_id) -> Incident   # after verify held
+    def ignore(incident_id)              # escalation consequence
+    def plant_state() -> PlantState      # dashboard: machines, gateways, starvation, KPIs
+    def action_log(incident_id) -> list[ActionRecord]  # GROUND TRUTH: eval + Memory Browser only
+    def subscribe(listener)              # incident_detected | re_degradation | incident_closed
+    def tick(); def reset()
 ```
 
-`execute_action` returns `{effect, recovery_pct, re_degrade_after_sim_s | None}`. Partial effects recover the machine, then the engine re-degrades it after the delay.
+- **No ground truth crosses the adapter.** `execute_action` returns what a real ops API returns — a receipt ("M3 controller restarted"). The true effect is recorded in `actions_log` for evaluation; the agent learns whether a fix worked only by observing recovery (`verify`).
+- Every metric is a closed-form function of sim time plus a seeded random walk on a fixed 10 s grid, so the same seed gives the same world at any clock speed (demo realtime, test manual, eval fast-forward).
+- Reads advance the world lazily (`tick()` first); the API's background loop only exists to push SSE updates.
 
 ### 5.9 Environment Adapter Boundary (the agent never imports the simulator)
 
@@ -597,7 +607,7 @@ START
 - `search_memory`: deterministic recall (6.3).
 - `decide`: LLM → `Recommendation` (Pydantic, whitelist). Must cite matched incident IDs when memory informed the decision.
 - `act`: **no LLM**. `interrupt({"recommendation": ...})` pauses the graph; state lives in `InMemorySaver` keyed by `thread_id=incident_id`. `POST /api/incident/{id}/action` resumes with `Command(resume={"action": ...})`. The judge may pick *any* whitelisted action (this is the sabotage beat). In `auto_approve` mode (eval harness), the recommended action is applied without interrupting.
-- `verify`: **no LLM**. Polls metrics over the verify window; declares `full_recovery` only if recovery holds for the whole window. This is what catches trap fixes.
+- `verify`: **no LLM**. Waits out the verify window, then reads `observe_recovery`: `held` → `full_recovery`; `recovered` but not held → `partial_recovery` (a trap fix wearing off); never recovered → `no_effect`. The agent infers the effect — it is never told. This is what catches trap fixes.
 - `record_lesson`: renders + retains a partial lesson (6.2), then loops.
 - `learn`: renders + retains the episode, writes metrics, closes the incident, emits `memory_written` and `metrics_updated`.
 
@@ -951,7 +961,7 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 - `spike_recall_design.py sig|nosig`: 5 episodes (all 4 classes), with vs without a `SIGNATURE:` line, observed-signals-only queries. ✅ Chooses the record format and match rule. **Done — results in Section 14.**
 - `spike_groq.py`: list available models; tool-calling round trip on primary + fallback; provoke a malformed tool call and confirm the `tool_use_failed` / `failed_generation` shape; confirm `include_reasoning: false` suppresses reasoning. ✅ Record: fallback model choice, error shapes, typical latency. **Done — results in Section 14.**
 
-**Phase 1 — Simulator + adapter + CI.** CI workflow and `Makefile` land in the first Phase 1 commit, so every later commit is checked. ✅ `backend/adapters/base.py` Protocol + simulator implementation + datadog stub; `tests/test_adapter.py` passes; `pytest tests/test_simulator.py`: each of 4 types triggers on random machines; metrics degrade per taxonomy; every cell of the effects matrix (5.5) produces the specified effect incl. re-degradation timing; IGNORE cascades; custom builder maps to the right class incl. `ambiguous`; sim clock math; SQLite persists everything.
+**Phase 1 — Simulator + adapter + CI. ✔ DONE** (103 tests; mutation-checked: breaking the trap fix or its re-degradation fails the suite). CI workflow and `Makefile` land in the first Phase 1 commit, so every later commit is checked. ✅ `backend/adapters/base.py` Protocol + simulator implementation + datadog stub; `tests/test_adapter.py` passes; `pytest tests/test_simulator.py`: each of 4 types triggers on random machines; metrics degrade per taxonomy; every cell of the effects matrix (5.5) produces the specified effect incl. re-degradation timing; IGNORE cascades; custom builder maps to the right class incl. `ambiguous`; sim clock math; SQLite persists everything.
 
 **Phase 2 — Agent.** ✅ `demo_dryrun.py` headless: config regression → real tool calls → valid recommendation → action executes → verify → episode retained (visible in Hindsight Cloud UI) → reworded same-type incident on another machine → recall returns prior episode above threshold → fewer tool calls, higher confidence, reasoning cites INC-ID → trap-fix loop works (restart → re-degrade → lesson retained → re-investigate → rollback) → memory OFF run shows no memory events.
 

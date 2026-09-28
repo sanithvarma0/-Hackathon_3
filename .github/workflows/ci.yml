@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# CI never needs API keys: every external service is faked in tests.
+# The live evaluation suite (`make eval`) runs locally and its report is committed.
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy backend
+      - name: Tests
+        run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

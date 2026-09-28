@@ -2,7 +2,7 @@
 
 **A self-learning production incident commander.** A simulated 5-machine factory develops incidents; a single LangGraph agent investigates, recommends a fix, and — through [Hindsight](https://hindsight.vectorize.io) memory — resolves recurring incident classes faster and more accurately every time.
 
-> Status: **Phase 0 + 0.5 done** (scaffold, live dependency checks, spikes — results in BUILD_PLAN.md Section 14). See [BUILD_PLAN.md](BUILD_PLAN.md) for the full specification and [TECH_STACK.md](TECH_STACK.md) for the stack and decision log.
+> Status: **Phase 1 done** — deterministic factory simulator, environment adapter boundary, 103 tests, CI. Spike results in BUILD_PLAN.md Section 14. See [BUILD_PLAN.md](BUILD_PLAN.md) for the full specification and [TECH_STACK.md](TECH_STACK.md) for the stack and decision log.
 
 ## Prerequisites
 
@@ -41,8 +41,8 @@ uv run python scripts/spike_recall_design.py sig   # record/query design vs matc
 ## Tests
 
 ```bash
-uv run pytest
-uv run ruff check .
+make check      # ruff + format check + eslint + mypy --strict + pytest (what CI runs)
+make test       # pytest only — no network, no API keys
 ```
 
 ## How Hindsight memory is used

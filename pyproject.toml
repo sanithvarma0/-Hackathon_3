@@ -19,6 +19,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "mypy",
     "pytest",
     "pytest-asyncio",
     "ruff",
@@ -42,3 +43,14 @@ extend-exclude = ["*.md"]  # keep ruff away from code samples in the plan docs
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+strict = true
+warn_unreachable = true
+exclude = ["^frontend/", "^scripts/"]
+
+[[tool.mypy.overrides]]
+module = ["hindsight_client.*", "langfuse.*"]
+ignore_missing_imports = true
