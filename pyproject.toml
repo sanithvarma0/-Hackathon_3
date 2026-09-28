@@ -1,0 +1,44 @@
+[project]
+name = "memoryops"
+version = "0.1.0"
+description = "Self-learning production incident commander powered by Hindsight memory"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sse-starlette",
+    "langgraph",
+    "openai",
+    "langfuse",
+    "hindsight-client",
+    "pydantic",
+    "pydantic-settings",
+    "httpx",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["*.md"]  # keep ruff away from code samples in the plan docs
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
