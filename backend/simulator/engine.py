@@ -27,6 +27,7 @@ from backend.schemas import (
     Action,
     ActionReceipt,
     ActionRecord,
+    Alert,
     CustomIncidentSpec,
     Event,
     GatewayState,
@@ -294,7 +295,7 @@ class Simulator:
             return
 
         level = fault.level(t)
-        if level > 0.3:
+        if level > 0.15:  # symptoms are logged from early in the onset
             for mid in fault.affected:
                 if self._rng.random() < 0.25:
                     vocab = self._rng.choice(log_vocabularies(fault.spec.flags))
@@ -695,10 +696,8 @@ class Simulator:
             ratios = [worst_by_ts[t] for t in sorted(worst_by_ts)]
             recovered = any(r >= HEALTHY_RATIO for r in ratios)
             primary = fault.spec.machine_id
-            min_tp = min(
-                (r["throughput_pct"] for r in rows if r["machine_id"] == primary),
-                default=self._current[primary]["throughput_pct"],
-            )
+            primary_tp = [r["throughput_pct"] for r in rows if r["machine_id"] == primary]
+            current_tp = self._current[primary]["throughput_pct"]
             return RecoveryObservation(
                 incident_id=incident_id,
                 window_sim_s=window_sim_s,
@@ -706,8 +705,9 @@ class Simulator:
                 complete=now - start >= window_sim_s,
                 recovered=recovered,
                 held=bool(ratios) and all(r >= HEALTHY_RATIO for r in ratios),
-                min_throughput_pct=min_tp,
-                current_throughput_pct=self._current[primary]["throughput_pct"],
+                peak_throughput_pct=max(primary_tp, default=current_tp),
+                min_throughput_pct=min(primary_tp, default=current_tp),
+                current_throughput_pct=current_tp,
             )
 
     def close_incident(self, incident_id: str) -> Incident:
@@ -862,6 +862,26 @@ class Simulator:
                 oee_pct=round(sum(m.oee_pct for m in machines) / len(machines), 2),
                 alerts=sum(1 for m in machines if m.status in ("degraded", "critical")),
                 active_incident_id=self._fault.incident_id if self._fault else None,
+            )
+
+    def alert(self, incident_id: str) -> Alert:
+        """What monitoring shows when the incident fires: symptoms only, no diagnosis."""
+        with self._lock:
+            self.tick()
+            row = self._incident_row(incident_id)
+            mid = row["machine_id"]
+            m = MACHINES[mid]
+            return Alert(
+                incident_id=incident_id,
+                machine_id=mid,
+                machine_name=m.name,
+                machine_profile=m.profile,
+                detected_ts=row["detected_ts"] or self._last_step,
+                throughput_pct=self._current[mid]["throughput_pct"],
+                nominal_throughput_pct=round(self._baseline[mid].throughput_pct, 1),
+                alerting_machines=tuple(
+                    x for x in MACHINES if self._status(x) in ("degraded", "critical")
+                ),
             )
 
     def active_incident(self) -> Incident | None:

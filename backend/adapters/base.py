@@ -15,11 +15,13 @@ from typing import Protocol, runtime_checkable
 from backend.schemas import (
     Action,
     ActionReceipt,
+    Alert,
     Event,
     MachineMetrics,
     Metric,
     MetricPoint,
     RecoveryObservation,
+    Resolution,
 )
 
 
@@ -50,3 +52,21 @@ class EnvironmentAdapter(Protocol):
 
     # Used by the verify node.
     def observe_recovery(self, incident_id: str, window_sim_s: int) -> RecoveryObservation: ...
+
+
+@runtime_checkable
+class IncidentLifecycle(Protocol):
+    """The incident-management side (PagerDuty's role): open alert, acknowledge, resolve.
+
+    Kept separate from EnvironmentAdapter because it is about the ticket, not the machines.
+    """
+
+    def get_alert(self, incident_id: str) -> Alert: ...
+
+    def acknowledge(self, incident_id: str) -> None:
+        """A recommendation is waiting for a human; time from here is human wait."""
+        ...
+
+    def resolve(self, incident_id: str) -> Resolution:
+        """Close a verified incident (or return the resolution of an escalated one)."""
+        ...

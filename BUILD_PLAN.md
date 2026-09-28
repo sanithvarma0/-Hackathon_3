@@ -1,5 +1,7 @@
-# MemoryOps — Build Specification v1.6
+# MemoryOps — Build Specification v1.7
 
+> **v1.7 changes (Phase 2 built):** incident open/acknowledge/resolve moved to a separate `IncidentLifecycle` port (PagerDuty's role), so the agent never touches the simulator; the agent is async end to end (the Hindsight sync client binds to per-thread event loops); graph gains `request_approval` (human wait starts once, not on interrupt re-entry) and `escalate` nodes; live dry-run findings recorded in 14.1 (Groq free-tier token limit, pseudo-tool salvage, query paraphrasing fixes, memory's measured effect).
+>
 > **v1.6 changes (Phase 1 built):** `execute_action` returns an `ActionReceipt` (confirmation only) instead of the effect — returning the effect would leak ground truth to the agent; `verify` now infers the effect from a `RecoveryObservation`. Trap fixes recover to 90–94% (looks fixed) before re-degrading, instead of an obviously-partial 65–75%. Simulator API (5.8) updated to the implemented control plane.
 >
 > **v1.5 changes (UI direction):** Section 10 rewritten as the "industrial control room" UI spec — plant-floor SVG world view, right-rail panels, purple reserved for memory, per-incident visual signatures, SSE→UI mapping, designed states, timebox + fallback. Plant topology (5.2) changed to one serial line with a robotic material-handling cell and two network gateways, so the world view reads as a real line and network cascades are visible. Match badges show rank + strength, never raw similarity (per 14.1).
@@ -387,6 +389,7 @@ class EnvironmentAdapter(Protocol):
 ```
 
 - **Not in the adapter:** `trigger_incident`, `ignore`, `tick`, `reset` — they are the simulator's control plane (a real factory has no "trigger incident" API). FastAPI and the eval harness call them on the simulator directly.
+- **`IncidentLifecycle` port** (`get_alert`, `acknowledge`, `resolve`): the ticket side — what PagerDuty/Opsgenie does in production. Separate from the adapter because it is about the incident record, not the machines. The alert carries symptoms only (machine, throughput vs nominal, which machines are alerting), never a diagnosis.
 - All return types are Pydantic models in `backend/schemas.py`, so the contract is typed and tested (`tests/test_adapter.py`).
 - `backend/adapters/datadog.py` is a stub whose docstring maps each method to the real source (metrics → Datadog metrics query, events → deploy/change events, logs → log search, actions → runbook automation / PagerDuty). Every method raises `NotImplementedError`. Visible intent, zero risk.
 - Q&A line: *"The agent only sees six typed methods. This demo implements them with a deterministic simulator; in production you implement them with Datadog, PagerDuty and your orchestrator. Nothing else changes."*
@@ -592,24 +595,29 @@ START
   → investigate           (LLM tool loop, ≤10 calls)
   → search_memory         (skip if memory OFF)
   → decide                (LLM → validated Recommendation)
-  → act ⏸                 (interrupt(); judge picks action; executes)
+  → request_approval      (human wait starts here — excluded from MTTR)
+  → act ⏸                 (interrupt(); human picks action; executes via adapter)
   → route_after_act:
        ESCALATE_HUMAN ─────────────────────────────→ learn → END
-       otherwise → verify (watch VERIFY_WINDOW_SIM_S, default 180)
+       otherwise → verify (wait VERIFY_WINDOW_SIM_S, then observe_recovery)
   → route_after_verify:
        full_recovery ──────────────────────────────→ learn → END
        partial/no_effect and attempt_count < 3 ────→ record_lesson → investigate
-       partial/no_effect and attempt_count == 3 ───→ learn (escalated) → END
+       partial/no_effect and attempt_count == 3 ───→ escalate → learn → END
 ```
+
+Implemented in `backend/agent/graph.py` (async nodes in `backend/agent/nodes/`), driven by `AgentRunner` (`start` / `resume` / `pending_recommendation`). Any unexpected exception becomes an `error{AGENT_ERROR}` event plus an escalation — an incident is never left half-handled.
 
 - `recall_hints`: recall on the alert; hints like "in similar past incidents, recent config deploys were the root cause" are injected into the investigate prompt.
 - `investigate`: LLM tool-calling loop over the 4 tools. Max **10 tool calls** (guardrail 2). Every call and result streams as SSE. Ends with an `investigation_summary`. On retry it also sees the previous attempts ("RESTART_MACHINE → recovered to 70%, re-degraded after 90s").
 - `search_memory`: deterministic recall (6.3).
 - `decide`: LLM → `Recommendation` (Pydantic, whitelist). Must cite matched incident IDs when memory informed the decision.
+- `request_approval`: **no LLM**. Emits `awaiting_action` and, in human mode, `lifecycle.acknowledge()` (starts the human-wait clock). A separate node because LangGraph re-runs a node from its start on resume — putting this in `act` would reset the wait clock.
 - `act`: **no LLM**. `interrupt({"recommendation": ...})` pauses the graph; state lives in `InMemorySaver` keyed by `thread_id=incident_id`. `POST /api/incident/{id}/action` resumes with `Command(resume={"action": ...})`. The judge may pick *any* whitelisted action (this is the sabotage beat). In `auto_approve` mode (eval harness), the recommended action is applied without interrupting.
 - `verify`: **no LLM**. Waits out the verify window, then reads `observe_recovery`: `held` → `full_recovery`; `recovered` but not held → `partial_recovery` (a trap fix wearing off); never recovered → `no_effect`. The agent infers the effect — it is never told. This is what catches trap fixes.
 - `record_lesson`: renders + retains a partial lesson (6.2), then loops.
-- `learn`: renders + retains the episode, writes metrics, closes the incident, emits `memory_written` and `metrics_updated`.
+- `escalate`: attempts exhausted → `ESCALATE_HUMAN` through the adapter.
+- `learn`: `lifecycle.resolve()` (MTTR from the ticket system), renders + retains the episode, emits `outcome` and `memory_written`, and returns the run's facts (`final`). Ground-truth scoring (was the first recommendation correct?) is done by the eval harness, never inside the agent.
 
 ### 7.3 Tools (exactly 4 — the LLM's interface to the world)
 
@@ -963,7 +971,7 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 
 **Phase 1 — Simulator + adapter + CI. ✔ DONE** (103 tests; mutation-checked: breaking the trap fix or its re-degradation fails the suite). CI workflow and `Makefile` land in the first Phase 1 commit, so every later commit is checked. ✅ `backend/adapters/base.py` Protocol + simulator implementation + datadog stub; `tests/test_adapter.py` passes; `pytest tests/test_simulator.py`: each of 4 types triggers on random machines; metrics degrade per taxonomy; every cell of the effects matrix (5.5) produces the specified effect incl. re-degradation timing; IGNORE cascades; custom builder maps to the right class incl. `ambiguous`; sim clock math; SQLite persists everything.
 
-**Phase 2 — Agent.** ✅ `demo_dryrun.py` headless: config regression → real tool calls → valid recommendation → action executes → verify → episode retained (visible in Hindsight Cloud UI) → reworded same-type incident on another machine → recall returns prior episode above threshold → fewer tool calls, higher confidence, reasoning cites INC-ID → trap-fix loop works (restart → re-degrade → lesson retained → re-investigate → rollback) → memory OFF run shows no memory events.
+**Phase 2 — Agent. ✔ DONE** (158 tests; three live dry runs, 14.1b). ✅ `demo_dryrun.py` headless: config regression → real tool calls → valid recommendation → action executes → verify → episode retained (visible in Hindsight Cloud UI) → reworded same-type incident on another machine → recall returns prior episode above threshold → fewer tool calls, higher confidence, reasoning cites INC-ID → trap-fix loop works (restart → re-degrade → lesson retained → re-investigate → rollback) → memory OFF run shows no memory events.
 
 **Phase 3 — API + SSE + Mental Model.** ✅ Incident Patterns mental model created at startup and readable after a few incidents; all endpoints work; one global SSE stream carries the full event contract; reconnect replays via Last-Event-ID; human-in-the-loop resume via action endpoint; guardrail violations and dependency failures emit `error` events instead of crashing.
 
@@ -997,12 +1005,31 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 | Malformed tool call | HTTP 400 `tool_use_failed`; `failed_generation` = refusal prose, not JSON |
 | `include_reasoning: false` | No reasoning field and no `<think>` in content on either model |
 
+### 14.1b Phase 2 live dry runs (2026-09-28, `scripts/demo_dryrun.py`, 5-incident storyline, fast-forward clock)
+
+| Run | Change since previous | First recs correct | False replays | LLM outages | Tokens / incident | Real s / incident |
+|---|---|---|---|---|---|---|
+| 1 | — | 5/5 | 0 | 0 | not recorded | 68–234 (rate-limit waits) |
+| 2 | smaller tool output, 429 → switch model | 3/5 | 1 (sensor drift → ROLLBACK) | 2 | 8.6k | 8–25 |
+| 3 | honour Groq retry-after, escalate on incomplete investigation, skip memory search on empty query | **5/5** | **0** | **0** | 19.6k | ~40–70 |
+
+What the runs taught (all fixed and covered by regression tests):
+- **Groq free tier is 8,000 tokens/minute per model.** An incident costs ~9–20k tokens, so the free tier sustains roughly one incident per minute across both models. Fine for the live demo; it bounds the eval suite's size (14.2).
+- **Rate limits caused the only false replay** (run 2): both models throttled → investigation cut short → bare "output decline" memory query → a config-regression match → the decision replayed ROLLBACK on a sensor drift. `verify` caught it (no effect), a lesson was written and the retry recalibrated — self-correction worked, but the root cause was fixed: memory never decides without evidence.
+- **The model sometimes "calls" a made-up tool named `json` to deliver its answer** (`tool_use_failed`); salvaged as the text reply.
+- **Query paraphrasing needed whole-word matching** ("mes" inside "times") and idempotence.
+- **Observed memory effect on these textbook classes is small on accuracy**: the cold agent already picks the right fix for config regression and sensor drift. Memory showed up as citations, cross-machine transfer, `actions_known_to_fail` after the sabotage lesson, and discrimination (retrieved config incidents for a sensor drift and correctly declined them). Where memory should move accuracy is on non-obvious fixes and trap avoidance; the eval suite measures this per class (11.3) rather than assuming it.
+- **Retrieval precision is modest**: for a sensor drift, config-regression incidents scored rerank 0.30 (above the gate). The `decide` step, not the gate, does the discriminating; the eval reports gate precision separately.
+- **Onset is usually reported "abrupt"**: at detection only ~2 min of a 5–10 min ramp has happened. Harmless for matching so far; tracked.
+- Langfuse: one trace per run — e.g. the sabotage incident has 1 agent root, 17 generations, 6 tool calls, 4 chains, 3 retrievals, 2 memory writes.
+
 ### 14.2 Still to be measured
 
 | Item | Initial value | Set by |
 |---|---|---|
 | `MEMORY_MATCH_REL_RERANK` / `MEMORY_MATCH_MIN_RERANK` | 0.15 / 0.05 (from 14.1) | Re-checked by the eval suite's retrieval metrics (11.3) |
-| Eval throughput vs Groq rate limits | unknown | First `make eval --quick` (Phase 5) |
+| Eval throughput vs Groq rate limits | ~1 incident/min on the free tier (14.1b) → full battery (144 incident runs, ~2–3M tokens) takes hours | Decide before Phase 5: smaller battery, or Groq Dev tier |
+| MTTR cost model for fast-forward mode | none yet: no sim time passes during LLM calls, so eval MTTR ≈ detection + verify window | Phase 5: charge fixed sim-seconds per tool call / LLM call and document it (5.1) |
 | `SIM_SPEED` | 10 | Phase 4 demo rehearsal |
 | `VERIFY_WINDOW_SIM_S` | 180 | Phase 1 (must exceed max re-degrade delay) |
 | `ESCALATION_PENALTY_SIM_S` | 1800 | Phase 1 |

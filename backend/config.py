@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     groq_base_url: str = "https://api.groq.com/openai/v1"
     llm_primary_model: str = "openai/gpt-oss-120b"
     llm_fallback_model: str = "qwen/qwen3.8-27b"
-    llm_call_budget_s: float = 30.0
+    llm_call_budget_s: float = 45.0  # covers Groq rate-limit waits ("try again in 8s")
+    llm_seed: int | None = 42  # fixed sampling seed for reproducible runs (eval, BUILD_PLAN 11.2)
 
     # Langfuse
     langfuse_public_key: str = ""

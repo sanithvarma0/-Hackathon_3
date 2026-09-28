@@ -7,11 +7,13 @@ from backend.adapters.base import AdapterError
 from backend.schemas import (
     Action,
     ActionReceipt,
+    Alert,
     Event,
     MachineMetrics,
     Metric,
     MetricPoint,
     RecoveryObservation,
+    Resolution,
 )
 from backend.simulator import Simulator, SimulatorError
 
@@ -64,3 +66,29 @@ class SimulatorAdapter:
         if window_sim_s <= 0:
             raise AdapterError("INVALID_WINDOW", "window_sim_s must be positive")
         return _translate(lambda: self._sim.observe_recovery(incident_id, window_sim_s))
+
+
+class SimulatorLifecycle:
+    def __init__(self, simulator: Simulator) -> None:
+        self._sim = simulator
+
+    def get_alert(self, incident_id: str) -> Alert:
+        return _translate(lambda: self._sim.alert(incident_id))
+
+    def acknowledge(self, incident_id: str) -> None:
+        _translate(lambda: self._sim.begin_wait(incident_id))
+
+    def resolve(self, incident_id: str) -> Resolution:
+        def close() -> Resolution:
+            incident = self._sim.get_incident(incident_id)
+            if incident.status not in ("resolved", "escalated"):
+                incident = self._sim.close_incident(incident_id)
+            assert incident.mttr_sim_s is not None
+            return Resolution(
+                incident_id=incident_id,
+                status="escalated" if incident.status == "escalated" else "resolved",
+                mttr_sim_s=incident.mttr_sim_s,
+                human_wait_sim_s=incident.human_wait_sim_s,
+            )
+
+        return _translate(close)

@@ -99,6 +99,7 @@ class RecoveryObservation(_Frozen):
     complete: bool  # the full window has elapsed
     recovered: bool  # affected machines climbed back to healthy after the action
     held: bool  # ...and stayed healthy for the whole observed window
+    peak_throughput_pct: float
     min_throughput_pct: float
     current_throughput_pct: float
 
@@ -146,6 +147,26 @@ class ActionRecord(_Frozen):
     recovery_pct: float | None
     re_degraded_after_sim_s: int | None
     executed_by: str
+
+
+class Alert(_Frozen):
+    """What monitoring tells the agent when an incident is detected. No diagnosis."""
+
+    incident_id: str
+    machine_id: str
+    machine_name: str
+    machine_profile: str
+    detected_ts: int
+    throughput_pct: float
+    nominal_throughput_pct: float
+    alerting_machines: tuple[str, ...]  # every machine currently below its alert threshold
+
+
+class Resolution(_Frozen):
+    incident_id: str
+    status: Literal["resolved", "escalated"]
+    mttr_sim_s: int
+    human_wait_sim_s: int
 
 
 class GatewayState(_Frozen):
