@@ -70,6 +70,8 @@ CREATE TABLE IF NOT EXISTS incidents (
     resolved_ts INTEGER,
     human_wait_sim_s INTEGER NOT NULL DEFAULT 0,
     resolution_action TEXT,
+    engineer_action TEXT,              -- what the on-call engineer did after an escalation
+    engineer_note TEXT,
     mttr_sim_s INTEGER
 );
 

@@ -8,7 +8,7 @@
 
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
 - Node.js 20+
-- API keys: Hindsight Cloud, Groq, Langfuse (see `.env.example`)
+- API keys: Hindsight Cloud, OpenAI (primary LLM), Groq (fallback LLM), Langfuse (see `.env.example`)
 
 ## Setup
 
@@ -41,8 +41,11 @@ uv run python scripts/spike_recall_design.py sig   # record/query design vs matc
 ## Live dry run (agent end to end on Groq + Hindsight + Langfuse)
 
 ```bash
-uv run python scripts/demo_dryrun.py   # 5-incident demo storyline on a throwaway memory bank
+uv run python scripts/demo_dryrun.py   # 6-incident demo storyline on a throwaway memory bank
+make usage                               # LLM spend + tokens: all-time, by model, by step, per run
 ```
+
+Every LLM call is recorded (tokens, cost, latency, incident) in `data/usage.db`; LLM calls stop at `LLM_SPEND_CAP_USD` (default $10) and the agent escalates instead.
 
 ## Tests
 

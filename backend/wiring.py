@@ -18,12 +18,14 @@ from backend.memory.hindsight import HindsightMemory
 from backend.memory.outbox import MemoryWriter
 from backend.observability import Tracer, build_tracer
 from backend.simulator import Simulator
+from backend.usage import UsageLedger
 
 
 @dataclass
 class LiveAgent:
     runner: AgentRunner
     deps: AgentDeps
+    ledger: UsageLedger
     memory: HindsightMemory
     hindsight: Hindsight
     tracer: Tracer
@@ -42,8 +44,12 @@ async def build_live_agent(
     emit: Emit,
     wait_sim: WaitSim,
     executed_by: str = "agent",
+    run_label: str = "live",
 ) -> LiveAgent:
     tracer = build_tracer(settings)
+    ledger = UsageLedger(
+        settings.usage_db_path, run_label=run_label, spend_cap_usd=settings.llm_spend_cap_usd
+    )
     hindsight = Hindsight(
         base_url=settings.hindsight_base_url, api_key=settings.hindsight_api_key, timeout=120
     )
@@ -52,12 +58,13 @@ async def build_live_agent(
         bank_id,
         rel_rerank=settings.memory_match_rel_rerank,
         min_rerank=settings.memory_match_min_rerank,
+        ledger=ledger,
     )
     await memory.ensure_bank()
     deps = AgentDeps(
         adapter=SimulatorAdapter(sim, executed_by=executed_by),
         lifecycle=SimulatorLifecycle(sim),
-        llm=build_llm(settings, traced=tracer.enabled),
+        llm=build_llm(settings, traced=tracer.enabled, ledger=ledger),
         memory=memory,
         writer=MemoryWriter(conn, memory),
         tracer=tracer,
@@ -67,4 +74,4 @@ async def build_live_agent(
         max_attempts=settings.max_attempts,
         verify_window_sim_s=settings.verify_window_sim_s,
     )
-    return LiveAgent(AgentRunner(deps), deps, memory, hindsight, tracer)
+    return LiveAgent(AgentRunner(deps), deps, ledger, memory, hindsight, tracer)

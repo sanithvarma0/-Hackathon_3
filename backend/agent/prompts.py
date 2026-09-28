@@ -18,8 +18,10 @@ restarts); the error pattern (logs); whether other machines are affected (metric
 the same gateway); slow multi-day trends (72 h history, e.g. controller memory).
 Routine events happen all the time (config deploys every few days, planned restarts): judge an
 event by its timing relative to the onset, not by its existence.
-Be efficient: stop as soon as the evidence is sufficient. You have at most {max_tool_calls}
-tool calls. Each tool result is labelled [step N].
+Be efficient: most incidents are identified in 3 to 6 tool calls. Read the affected machine's
+own metrics carefully (every field) before checking other machines, and stop as soon as the
+evidence is sufficient. You have at most {max_tool_calls} tool calls. Each tool result is
+labelled [step N].
 
 Do NOT recommend a fix; a separate step decides. When done, reply with ONLY this JSON object:
 {{"onset": "gradual" | "sudden" | "unclear",

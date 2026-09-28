@@ -1,5 +1,5 @@
 # MemoryOps — one entry point for every workflow (BUILD_PLAN.md 17.5).
-.PHONY: setup dev backend frontend test lint format typecheck check spikes clean
+.PHONY: setup dev backend frontend test lint format typecheck check spikes dryrun usage clean
 
 setup:            ## install backend + frontend dependencies
 	uv sync
@@ -36,5 +36,11 @@ spikes:           ## Phase 0.5 measurements against live services (needs .env)
 	uv run python scripts/spike_hindsight.py
 	uv run python scripts/spike_recall_design.py sig
 
+dryrun:           ## agent end to end on live services (needs .env; spends tokens)
+	uv run python scripts/demo_dryrun.py
+
+usage:            ## LLM spend + token report from the usage ledger
+	uv run python scripts/usage_report.py
+
 clean:            ## remove local simulator data and caches
-	rm -rf data .pytest_cache .mypy_cache .ruff_cache
+	rm -rf data/memoryops.db .pytest_cache .mypy_cache .ruff_cache  # keeps data/usage.db (spend history)

@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from backend.adapters import AdapterError, EnvironmentAdapter
 from backend.schemas import Metric
-from backend.simulator.machines import MACHINES
+from backend.simulator.machines import CALIBRATION_INTERVAL_DAYS, MACHINES
 
 
 class _Args(BaseModel):
@@ -97,6 +97,14 @@ class ToolResult(BaseModel):
     text: str
 
 
+def _calibration_note(age_days: float) -> str:
+    """What a maintenance system shows next to calibration age: the schedule and status."""
+    overdue = age_days - CALIBRATION_INTERVAL_DAYS
+    if overdue > 0:
+        return f"due every {CALIBRATION_INTERVAL_DAYS}d, OVERDUE by {overdue:.0f}d"
+    return f"due every {CALIBRATION_INTERVAL_DAYS}d, next due in {-overdue:.0f}d"
+
+
 def _ago(ts: int, now: int) -> str:
     minutes = (now - ts) / 60
     if minutes < 90:
@@ -153,7 +161,8 @@ def _execute(adapter: EnvironmentAdapter, name: str, args: _Args) -> str:
             f"error_rate={m.error_rate_pct:.2f}% temperature={m.temperature_c:.1f}C "
             f"sensor_variance={m.sensor_variance:.3f} packet_loss={m.packet_loss_pct:.2f}% "
             f"latency={m.latency_ms:.1f}ms memory={m.memory_pct:.1f}% "
-            f"config={m.config_version} calibration_age={m.calibration_age_days:.1f}d"
+            f"config={m.config_version} calibration_age={m.calibration_age_days:.1f}d "
+            f"({_calibration_note(m.calibration_age_days)})"
         )
     now = adapter.get_machine_metrics(mid).ts
     if isinstance(args, HistoryArgs):

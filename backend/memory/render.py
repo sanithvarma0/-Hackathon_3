@@ -23,7 +23,8 @@ PARAPHRASES: tuple[tuple[str, str], ...] = (
         # idempotent: also matches its own output, so re-paraphrasing changes nothing
         r"(?:a\s+)?(?:new|recent)\s+config(?:uration)?(?:\s+(?:was|were))?"
         r"(?:\s+(?:deployed|pushed|released|applied|changed|updated))?"
-        r"|config(?:uration)?\b[^;,]*?\b(?:deploy|chang|updat|push|releas)\w*",
+        r"|(?:an?\s+)?config(?:uration)?\b[^;,]*?\b(?:deploy|chang|updat|push|releas)\w*"
+        r"(?:\s+(?:occurred|happened|took\s+place))?",
         "a new configuration was deployed",
     ),
     (r"(packet|frame) loss", "dropped network packets"),
@@ -48,7 +49,8 @@ PARAPHRASES: tuple[tuple[str, str], ...] = (
         "false overheating alarms",
     ),
     (
-        r"(sensor|probe)\s+(variance|noise|repeatability)\w*|noisy (sensor|probe)\w*",
+        r"(?:sensor|probe)\s+(?:variance|noise|repeatability)\w*"
+        r"|noisy\s+(?:sensor|probe)\w*(?:\s+readings?)?",
         "noisy probe readings",
     ),
     (
@@ -114,6 +116,13 @@ _LINKERS = {
 }
 # Signals about throughput itself add nothing: the query already starts "output decline".
 _REDUNDANT = re.compile(r"\b(throughput|oee|output)\b", re.IGNORECASE)
+# Statements of absence ("no recent events", "other machines healthy") describe what was NOT
+# seen; measured live they pollute the query (observed signals only, BUILD_PLAN 6.3). A
+# contrast like "alarm while the IR probe reads normal" is an observation and is kept.
+_ABSENCE = re.compile(
+    r"\b(no|not|none|nothing|without|unchanged|normal|healthy|ruled out)\b", re.IGNORECASE
+)
+_CONTRAST = re.compile(r"\b(while|but|although|whereas)\b", re.IGNORECASE)
 
 
 def _compile(pattern: str) -> re.Pattern[str]:
@@ -145,7 +154,12 @@ def paraphrase(signal: str) -> str:
     text = _TOKEN_WITH_DIGIT.sub("", text)
     text = re.sub(r"[()\[\]{}:=%\u2192>]", " ", text)
     words = _drop_orphans(text.replace(",", " , ").replace(";", " ; ").split())
-    return _SPACES.sub(" ", " ".join(words)).replace(" ,", ",").replace(" ;", ";").strip(" ,;.-")
+    text = _SPACES.sub(" ", " ".join(words)).replace(" ,", ",").replace(" ;", ";").strip(" ,;.-")
+    kept: list[str] = []
+    for part in (p.strip() for p in text.split(",")):
+        if part and not any(part in earlier for earlier in kept):
+            kept.append(part)  # drop fragments already said ("calibration overdue, overdue")
+    return ", ".join(kept)
 
 
 def generalize(text: str) -> str:
@@ -173,6 +187,8 @@ def evidence_query(summary: InvestigationSummary) -> str:
         if _REDUNDANT.search(s) and not re.search(
             r"config|calibrat|memory|packet|latency", s, re.I
         ):
+            continue
+        if _ABSENCE.search(s) and not _CONTRAST.search(s):
             continue
         p = paraphrase(s)
         if p and p not in signals:
@@ -206,6 +222,8 @@ class EpisodeInput:
     outcome: str  # successful | escalated
     mttr_sim_s: int
     cited_incidents: list[str] = field(default_factory=list)
+    engineer_action: str | None = None  # after an escalation: what the engineer did
+    engineer_note: str | None = None
 
 
 def _fmt_attempt(i: int, a: AttemptRecord) -> str:
@@ -225,9 +243,15 @@ def lesson_line(ep: EpisodeInput) -> str:
     failed = [a for a in ep.attempts if a.effect in ("partial_recovery", "no_effect")]
     final = ep.attempts[-1].action if ep.attempts else "ESCALATE_HUMAN"
     if ep.outcome == "escalated":
-        tried = ", ".join(a.action for a in failed) or "no whitelisted fix"
+        tried = ", ".join(a.action for a in failed)
+        prefix = f"{tried} did not resolve this signature. " if tried else ""
+        if ep.engineer_action:
+            return (
+                f"{prefix}The on-call engineer resolved it with {ep.engineer_action}; next time "
+                f"recommend {ep.engineer_action} for this signature directly."
+            )
         return (
-            f"For this signature {tried} did not resolve the problem; escalate to a human "
+            f"{prefix}It needed a fix outside the agent's action set; escalate to a human "
             f"engineer early."
         )
     if not failed:
@@ -269,7 +293,8 @@ def render_episode(ep: EpisodeInput) -> str:
             attempts,
             "",
             f"RESOLUTION: final action {ep.attempts[-1].action if ep.attempts else 'none'}, "
-            f"MTTR {ep.mttr_sim_s / 60:.1f} sim-minutes.",
+            f"MTTR {ep.mttr_sim_s / 60:.1f} sim-minutes."
+            + (f" {ep.engineer_note}" if ep.engineer_note else ""),
             f"OUTCOME: {ep.outcome}.",
             f"LESSON: {lesson_line(ep)}",
         ]

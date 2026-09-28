@@ -2,12 +2,13 @@ import httpx
 import pytest
 
 from backend.config import Settings
-from backend.health import check_groq, check_hindsight, check_langfuse
+from backend.health import check_groq, check_hindsight, check_langfuse, check_openai
 
 
 def settings(**overrides) -> Settings:
     base = dict(
         hindsight_api_key="hsk_test",
+        openai_api_key="sk_test",
         groq_api_key="gsk_test",
         langfuse_public_key="pk",
         langfuse_secret_key="sk",
@@ -31,9 +32,9 @@ def client_raising() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
-@pytest.mark.parametrize("check", [check_hindsight, check_groq, check_langfuse])
+@pytest.mark.parametrize("check", [check_hindsight, check_openai, check_groq, check_langfuse])
 async def test_missing_keys_report_not_configured(check):
-    s = settings(hindsight_api_key="", groq_api_key="", langfuse_public_key="")
+    s = settings(hindsight_api_key="", openai_api_key="", groq_api_key="", langfuse_public_key="")
     async with client_returning(200) as c:
         assert (await check(c, s)).status == "not_configured"
 
@@ -47,13 +48,13 @@ async def test_missing_keys_report_not_configured(check):
         (500, "error"),
     ],
 )
-@pytest.mark.parametrize("check", [check_hindsight, check_groq, check_langfuse])
+@pytest.mark.parametrize("check", [check_hindsight, check_openai, check_groq, check_langfuse])
 async def test_http_status_mapping(check, status, expected):
     async with client_returning(status) as c:
         assert (await check(c, settings())).status == expected
 
 
-@pytest.mark.parametrize("check", [check_hindsight, check_groq, check_langfuse])
+@pytest.mark.parametrize("check", [check_hindsight, check_openai, check_groq, check_langfuse])
 async def test_network_failure_is_reported_not_raised(check):
     async with client_raising() as c:
         result = await check(c, settings())
@@ -66,9 +67,11 @@ async def test_requests_are_authenticated():
     s = settings()
     async with client_returning(200, seen) as c:
         await check_hindsight(c, s)
+        await check_openai(c, s)
         await check_groq(c, s)
         await check_langfuse(c, s)
-    hindsight, groq, langfuse = seen
+    hindsight, oai, groq, langfuse = seen
+    assert oai.url.path == "/v1/models" and oai.headers["authorization"] == "Bearer sk_test"
     assert hindsight.url.path == "/v1/default/banks"
     assert hindsight.headers["authorization"] == "Bearer hsk_test"
     assert groq.url.path == "/openai/v1/models"

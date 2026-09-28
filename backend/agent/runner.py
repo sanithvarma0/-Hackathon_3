@@ -17,6 +17,7 @@ from backend.agent.deps import AgentDeps
 from backend.agent.graph import build_graph
 from backend.agent.state import AgentState
 from backend.schemas import ACTIONS
+from backend.usage import current_incident
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,7 @@ class AgentRunner:
 
     async def _run(self, incident_id: str, payload: Any, memory_enabled: bool | None) -> RunResult:
         started = time.perf_counter()
+        token = current_incident.set(incident_id)  # attributes LLM spend to this incident
         meta = {} if memory_enabled is None else {"memory_enabled": str(memory_enabled)}
         with self._deps.tracer.run(incident_id, **meta) as root:
             try:
@@ -84,12 +86,14 @@ class AgentRunner:
                 )
                 self._fail_safe(incident_id)
                 root.update(output={"error": str(e)}, level="ERROR")
+                current_incident.reset(token)
                 return self._result(incident_id, "failed", {}, started)
             status: Literal["awaiting_action", "finished"] = (
                 "awaiting_action" if result.get("__interrupt__") else "finished"
             )
             root.update(output=result.get("final") or {"status": status})
             url = self._deps.tracer.current_trace_url()
+        current_incident.reset(token)
         return self._result(incident_id, status, dict(result), started, url)
 
     def _fail_safe(self, incident_id: str) -> None:

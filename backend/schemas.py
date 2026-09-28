@@ -134,6 +134,8 @@ class Incident(_Frozen):
     human_wait_sim_s: int
     resolution_action: Action | None
     mttr_sim_s: int | None
+    engineer_action: Action | None = None
+    engineer_note: str | None = None
 
 
 class ActionRecord(_Frozen):
@@ -167,6 +169,10 @@ class Resolution(_Frozen):
     status: Literal["resolved", "escalated"]
     mttr_sim_s: int
     human_wait_sim_s: int
+    # After an escalation the on-call engineer's resolution note is on the ticket — real,
+    # after-the-fact knowledge the agent can learn from (None: fixed outside the action set).
+    engineer_action: Action | None = None
+    engineer_note: str | None = None
 
 
 class GatewayState(_Frozen):

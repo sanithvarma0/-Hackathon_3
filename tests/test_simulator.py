@@ -374,3 +374,13 @@ def test_error_logs_hide_info_and_future_lines(world: World):
     now = int(world.clock.now())
     future = world.sim._conn.execute("SELECT COUNT(*) FROM logs WHERE ts > ?", (now,)).fetchone()[0]
     assert future == 0
+
+
+def test_closing_an_incident_refreshes_the_machine_immediately(world: World):
+    """Regression: after an escalation the machine still read degraded until the next tick,
+    so an incident triggered right away was rejected (MACHINE_NOT_HEALTHY)."""
+    incident = world.sim.trigger_incident("sensor_drift", "M2")
+    world.advance(FULLY_DEGRADED_S)
+    world.adapter.execute_action(incident.id, "ESCALATE_HUMAN")
+    assert world.adapter.get_machine_metrics("M2").status == "healthy"
+    assert world.sim.trigger_incident("sensor_drift", "M2").machine_id == "M2"

@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,11 +21,21 @@ class Settings(BaseSettings):
     hindsight_bank_live: str = "memoryops-live"
     hindsight_bank_seeded: str = "memoryops-seeded"
 
-    # Groq (OpenAI-compatible endpoint)
+    # LLM routes: OpenAI primary, Groq fallback (both via the OpenAI SDK)
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    # gpt-5.4-mini on Chat Completions (measured): function tools require reasoning_effort=none,
+    # and temperature=0 is only accepted with none. So "none" is the only setting for this agent.
+    openai_reasoning_effort: str = "none"
     groq_api_key: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    llm_primary_model: str = "openai/gpt-oss-120b"
-    llm_fallback_model: str = "qwen/qwen3.8-27b"
+    llm_primary_provider: Literal["openai", "groq"] = "openai"
+    llm_primary_model: str = "gpt-5.4-mini"
+    llm_fallback_provider: Literal["openai", "groq"] = "groq"
+    llm_fallback_model: str = "openai/gpt-oss-120b"
+    # Spend tracking (backend/usage.py): persistent ledger + hard cap on all-time LLM spend
+    usage_db_path: Path = REPO_ROOT / "data" / "usage.db"
+    llm_spend_cap_usd: float = 10.0
     llm_call_budget_s: float = 45.0  # covers Groq rate-limit waits ("try again in 8s")
     llm_seed: int | None = 42  # fixed sampling seed for reproducible runs (eval, BUILD_PLAN 11.2)
 

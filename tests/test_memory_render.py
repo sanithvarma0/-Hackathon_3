@@ -168,3 +168,20 @@ def test_throughput_only_signals_are_dropped_from_the_query():
     assert evidence_query(summary) == (
         "abrupt output decline; a new configuration was deployed before alert"
     )
+
+
+def test_statements_of_absence_are_not_query_signals():
+    """Regression (live dry run, OpenAI): "no recent events", "other machines healthy"."""
+    summary = InvestigationSummary(
+        onset="gradual",
+        key_signals=[
+            "temperature alarm while the IR probe still reads normal",
+            "no recent events were found for M2 in the last 180 min",
+            "M1 on the same gateway and M3/M4 on the other gateway were healthy",
+            "calibration age 41 days, overdue",
+        ],
+    )
+    assert evidence_query(summary) == (
+        "gradual output decline; false overheating alarms while the ir probe still reads normal; "
+        "sensor calibration overdue"
+    )

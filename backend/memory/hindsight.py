@@ -10,6 +10,7 @@ from typing import Any
 from hindsight_client import Hindsight
 
 from backend.memory.store import MemoryMatch, MemoryRecall, MemoryRecord
+from backend.usage import UsageLedger
 
 INCIDENT_PATTERNS_ID = "incident-patterns"
 
@@ -90,9 +91,16 @@ def apply_match_rule(
 
 class HindsightMemory:
     def __init__(
-        self, client: Hindsight, bank_id: str, *, rel_rerank: float, min_rerank: float
+        self,
+        client: Hindsight,
+        bank_id: str,
+        *,
+        rel_rerank: float,
+        min_rerank: float,
+        ledger: UsageLedger | None = None,
     ) -> None:
         self._client = client
+        self._ledger = ledger
         self.bank_id = bank_id
         self._rel = rel_rerank
         self._floor = min_rerank
@@ -157,7 +165,7 @@ class HindsightMemory:
         return content or None
 
     async def retain(self, record: MemoryRecord) -> None:
-        await self._client.aretain(
+        resp = await self._client.aretain(
             bank_id=self.bank_id,
             content=record.text,
             context="production incident resolution",
@@ -167,3 +175,10 @@ class HindsightMemory:
             tags=[f"kind:{record.kind}"],
             retain_async=False,  # recallable immediately (measured, 14.1)
         )
+        usage = getattr(resp, "usage", None)
+        if self._ledger is not None and usage is not None:
+            self._ledger.record_memory(
+                op=f"retain_{record.kind}",
+                input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+                output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+            )

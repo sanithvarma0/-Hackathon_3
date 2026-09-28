@@ -7,7 +7,7 @@ from typing import Any
 
 from backend.adapters import SimulatorAdapter, SimulatorLifecycle
 from backend.agent.deps import AgentDeps
-from backend.llm import LLMClient
+from backend.llm import LLMClient, ModelRoute
 from backend.memory.outbox import MemoryWriter
 from backend.memory.store import MemoryMatch, MemoryRecall, MemoryRecord
 from backend.observability import Tracer
@@ -170,7 +170,13 @@ class Harness:
         self.deps = AgentDeps(
             adapter=SimulatorAdapter(world.sim),
             lifecycle=SimulatorLifecycle(world.sim),
-            llm=LLMClient(groq.create, ["primary", "fallback"], sleep=no_sleep),
+            llm=LLMClient(
+                [
+                    ModelRoute("fake", "primary", groq.create),
+                    ModelRoute("fake", "fallback", groq.create),
+                ],
+                sleep=no_sleep,
+            ),
             memory=memory,
             writer=self.writer,
             tracer=Tracer(),

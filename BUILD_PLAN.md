@@ -1,5 +1,7 @@
-# MemoryOps — Build Specification v1.7
+# MemoryOps — Build Specification v1.8
 
+> **v1.8 changes (LLM provider + spend tracking):** primary LLM is now **OpenAI `gpt-5.4-mini`** with Groq `gpt-oss-120b` as a cross-provider fallback (Groq's free tier is 8,000 tokens/min; OpenAI's quota for this key is 180M/min; Gemini returned 503 on every current model). Every LLM call and memory write is recorded in a persistent **usage ledger** with tokens and cost from the published price list, and a **hard spend cap** stops LLM calls (→ escalation) when reached (7.6). Escalations now close with the **on-call engineer's fix on the ticket**, so the agent learns from what humans did (5.5, 6.2). Measured OpenAI constraints and dry-run results in 14.1c.
+>
 > **v1.7 changes (Phase 2 built):** incident open/acknowledge/resolve moved to a separate `IncidentLifecycle` port (PagerDuty's role), so the agent never touches the simulator; the agent is async end to end (the Hindsight sync client binds to per-thread event loops); graph gains `request_approval` (human wait starts once, not on interrupt re-entry) and `escalate` nodes; live dry-run findings recorded in 14.1 (Groq free-tier token limit, pseudo-tool salvage, query paraphrasing fixes, memory's measured effect).
 >
 > **v1.6 changes (Phase 1 built):** `execute_action` returns an `ActionReceipt` (confirmation only) instead of the effect — returning the effect would leak ground truth to the agent; `verify` now infers the effect from a `RecoveryObservation`. Trap fixes recover to 90–94% (looks fixed) before re-degrading, instead of an obviously-partial 65–75%. Simulator API (5.8) updated to the implemented control plane.
@@ -55,7 +57,7 @@ Judges see three surfaces — **the repo, the demo, the Q&A**. "Production-grade
 | Agent runtime | **LangGraph** (raw `StateGraph`) | Single agent. No `create_react_agent`, no DeepAgents, no multi-agent. |
 | Human-in-the-loop | **LangGraph `interrupt()` + `InMemorySaver`** | `thread_id = incident_id`; resume with `Command(resume=...)`. |
 | Memory | **Hindsight Cloud** via `hindsight-client` (Python, v0.10.x) | `https://api.hindsight.vectorize.io`. The ONLY memory system. Promo `MEMHACK99`. |
-| LLM | **Groq** via the OpenAI-compatible endpoint | Primary `openai/gpt-oss-120b`, fallback `qwen/qwen3.8-27b` (verified served, Phase 0.5). |
+| LLM | **OpenAI** primary, **Groq** fallback (both via the OpenAI SDK) | `gpt-5.4-mini` (`reasoning_effort=none`, `temperature=0`, fixed seed) → Groq `openai/gpt-oss-120b`. Every call recorded in the usage ledger (7.6). |
 | Backend | **FastAPI** + `sse-starlette` | Python 3.11+. |
 | Database | **SQLite** | Simulator state, metrics, episode outbox. No vector DB. |
 | Observability | **Langfuse** Cloud (free tier) | `langfuse.openai` drop-in + `@observe` on graph nodes. |
@@ -301,7 +303,7 @@ Each incident type = **stable signature + noisy surface**. Config Regression and
 | `network_failure` | none | none (machine fine, network broken) | none | **full** (all affected machines) | none |
 | `resource_exhaustion` | none | temporary relief → 90–95% (**looks fixed**), **re-degrades after 120–150 sim-s** | none | none | **full** |
 
-- `ESCALATE_HUMAN` (any type): incident closed as `escalated`; a fixed `ESCALATION_PENALTY_SIM_S` (default 1800) is added to MTTR to reflect handing off to an on-call engineer.
+- `ESCALATE_HUMAN` (any type): incident closed as `escalated`; a fixed `ESCALATION_PENALTY_SIM_S` (default 1800) is added to MTTR to reflect handing off to an on-call engineer. The engineer fixes it and notes the fix on the ticket (`engineer_action` = the class's correct fix; for `ambiguous`, a repair outside the action set). `IncidentLifecycle.resolve` returns that note, and the episode records it — so the agent learns from what the human did, not only from its own attempts ("Day 1: escalated, 30 min. Day 2: remembers the engineer's fix, 5 min.").
 - `none` = metrics unchanged; the incident keeps degrading.
 - Re-degradation windows are deliberately shorter than `VERIFY_WINDOW_SIM_S` (Section 7.2) so `verify` always catches a trap fix.
 
@@ -667,14 +669,24 @@ class Recommendation(BaseModel):
 
 ### 7.5 LLM Client (llm.py)
 
-- `openai` SDK pointed at Groq (`base_url="https://api.groq.com/openai/v1"`), imported via `from langfuse.openai import OpenAI` so every call is traced automatically.
-- Primary `openai/gpt-oss-120b`; retry ×2 with backoff (1 s, 2 s); then fallback model (`LLM_FALLBACK_MODEL`, default `qwen/qwen3.8-27b`) with the same retries; a **total time budget per call** (default 30 s) caps retries; on total failure → `ESCALATE_HUMAN` recommendation with reasoning "LLM unavailable" (graceful degradation, never crash).
-- **Fallback model availability (measured):** Groq no longer serves `qwen/qwen3-32b` (HTTP 404 `model_not_found`). Served chat models on 2026-09-28: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`, `openai/gpt-oss-safeguard-20b`, `allam-2-7b`. Chosen fallback: `qwen/qwen3.8-27b` (different model family from the primary → independent failure modes; tool calling verified; ~0.3–0.4 s per call). Re-run `spike_groq.py` before the demo; it's an env var.
-- **Parallel tool calls:** both models may return several tool calls in one turn (qwen did). Execute all of them, append each result, and count each toward the 10-call cap.
-- **Argument validation:** qwen silently coerced invalid arguments (asked for machine `Z9`, sent `M1`) instead of erroring. Validate every tool call's arguments with Pydantic before executing, regardless of what the API accepted.
-- **Malformed tool calls** (organizers explicitly warned). Groq rejects them with **HTTP 400, `error.code == "tool_use_failed"`, and the raw model output in `error.failed_generation`** (same handling as Hindsight's own Groq provider). Measured: in practice `failed_generation` often holds **plain refusal text**, not a JSON tool call. Order: (1) if `failed_generation` parses as `{name, arguments}` that validates against a known tool, use it; (2) otherwise treat it as the model's text reply, retry once; (3) else inject a corrective system message ("Your last tool call was malformed: … Call one of: …"). JSON-parse failures of `arguments` and unknown tool names go through the same path.
-- **Reasoning text:** send `extra_body={"include_reasoning": False}` for reasoning models, and still strip any `<think>…</think>` block from content before parsing (belt and braces).
-- Structured output for `decide`: request JSON, validate with `Recommendation`; on validation failure → one corrective retry (guardrail 1/3).
+- **Routes, not a single provider:** OpenAI `gpt-5.4-mini` primary, Groq `openai/gpt-oss-120b` fallback — both through the OpenAI SDK (`langfuse.openai` traces every call), each with its **own request parameters** (OpenAI rejects Groq's `include_reasoning`; measured). A provider with no key is skipped (CI).
+- Each route: retry ×2 with backoff; a **total time budget per call** (45 s) caps everything; total failure → `ESCALATE_HUMAN` recommendation (graceful degradation, never a crash).
+- **429:** with a successor route → switch now (separate quota); on the last route → wait as long as the provider asks ("try again in 8.265s"), capped at 15 s.
+- **400 naming an unsupported parameter** (e.g. `temperature` on some models): drop it for that route, retry at once, remember it. Measured live: this is what kept runs working when `reasoning_effort` was misconfigured (see 14.1c).
+- **OpenAI constraints for `gpt-5.4-mini` on Chat Completions (measured 2026-09-28):** function tools require `reasoning_effort=none`, and `temperature=0` is only accepted with `none` — so the agent runs `reasoning_effort=none, temperature=0, seed=42`. (`gpt-5.5` rejects `temperature=0` entirely; `gpt-4.1-mini` works but is slower.)
+- **Groq specifics (fallback):** `extra_body={"include_reasoning": False}`; `qwen/qwen3-32b` is retired (404), `qwen/qwen3.8-27b` also works; free tier 8,000 tokens/min per model.
+- **Parallel tool calls:** a model may return several in one turn — execute all, count each toward the 10-call cap. Each tool result tells the model how many calls remain (measured: cut forced conclusions from 6/6 to 2/6 incidents).
+- **Argument validation:** a model silently coerced an invalid machine ID (`Z9` → `M1`); every tool call's arguments are validated with Pydantic before execution.
+- **Malformed output:** HTTP 400 `tool_use_failed` / `json_validate_failed` → salvage `failed_generation`: a real tool call is executed; a made-up tool (seen: `json`) carrying the answer becomes the text reply; prose is returned as text for a corrective retry.
+- Any `<think>…</think>` block is stripped before parsing.
+- Structured output for `decide`: JSON mode, validated with `Recommendation`; one corrective retry (guardrails 1/3).
+
+### 7.6 Spend & Token Tracking (backend/usage.py)
+
+- **Usage ledger** (`data/usage.db`, persistent, git-ignored): one row per LLM attempt — run label, incident, agent step, provider, model, prompt / cached / completion / reasoning tokens, cost, latency, error — plus one row per Hindsight retain with the tokens Hindsight reports.
+- **Cost** from `PRICES` (USD per 1M tokens, cached input discounted), sourced from OpenAI's published Standard-tier price list (fetched 2026-09-28): `gpt-5.4-mini` $0.75 in / $0.075 cached / $4.50 out. Groq calls cost $0 on the free plan (tokens still counted). An unpriced model is reported as such, never guessed.
+- **Hard cap:** `LLM_SPEND_CAP_USD` (default $10) is checked against the ledger's all-time total before every call; reaching it raises `LLMBudgetExceeded` → `error{LLM_BUDGET_EXCEEDED}` → escalation.
+- **Reports:** `make usage` (all-time, by model, by agent step, recent runs, $/incident); `scripts/demo_dryrun.py` prints tokens and cost per incident; the eval report will include the same.
 
 ---
 
@@ -1023,12 +1035,28 @@ What the runs taught (all fixed and covered by regression tests):
 - **Onset is usually reported "abrupt"**: at detection only ~2 min of a 5–10 min ramp has happened. Harmless for matching so far; tracked.
 - Langfuse: one trace per run — e.g. the sabotage incident has 1 agent root, 17 generations, 6 tool calls, 4 chains, 3 retrievals, 2 memory writes.
 
+### 14.1c OpenAI dry runs (2026-09-28, 6-incident storyline incl. a repeat sensor drift)
+
+| Run | Change | First recs correct | Retries / fallbacks | Tokens / incident | Cost / incident |
+|---|---|---|---|---|---|
+| 4 | switched to OpenAI `gpt-5.4-mini` | 4/5 (sensor drift escalated) | 0 / 0 | 11.8k | $0.0113 |
+| 5 | calibration schedule in metrics, absence filter | 4/5 (sensor drift escalated again) | 0 / 0 | 14.0k | $0.0125 |
+| 6 | engineer fix recorded on escalations; +repeat sensor drift | **6/6** | 0 / 0 | 13.5k | $0.0124 |
+| 7 | `reasoning_effort=none`, remaining-budget hint | **6/6** | 0 / 0 (0 failed calls) | 15.0k (32k cached) | **$0.0109** |
+
+Findings:
+- **Speed and reliability:** ~12–20 s per incident, zero rate-limit retries, versus 25–234 s on the Groq free tier.
+- **The cold sensor drift is genuinely ambiguous for this model:** the reported temperature really climbs, so it escalated a possible real overheat in 2 of 4 cold runs (and recalibrated in 2) — even at `temperature=0`. This is exactly where memory helps: the repeat sensor drift on another machine cited the first and recalibrated with confidence 0.91–0.96. The eval measures it with seeds and CIs rather than trusting one run.
+- **`reasoning_effort` was silently dropped** on the first call of every run (tools + reasoning unsupported on Chat Completions) — caught by the ledger's failed-call count, fixed by configuring `none` explicitly.
+- **`investigate:force` was ~32% of spend** while the model never stopped on its own; the remaining-budget hint cut forced conclusions to 2 of 6 incidents.
+- **Total spend for all development runs so far: $0.26** (ledger).
+
 ### 14.2 Still to be measured
 
 | Item | Initial value | Set by |
 |---|---|---|
 | `MEMORY_MATCH_REL_RERANK` / `MEMORY_MATCH_MIN_RERANK` | 0.15 / 0.05 (from 14.1) | Re-checked by the eval suite's retrieval metrics (11.3) |
-| Eval throughput vs Groq rate limits | ~1 incident/min on the free tier (14.1b) → full battery (144 incident runs, ~2–3M tokens) takes hours | Decide before Phase 5: smaller battery, or Groq Dev tier |
+| Eval throughput and cost | Resolved by the OpenAI switch: ~15 s and ~$0.011 per incident (14.1c) → full battery (144 incident runs) ≈ $1.6 and well under an hour, estimated from measured averages | Confirmed by the first `make eval --quick` (Phase 5) |
 | MTTR cost model for fast-forward mode | none yet: no sim time passes during LLM calls, so eval MTTR ≈ detection + verify window | Phase 5: charge fixed sim-seconds per tool call / LLM call and document it (5.1) |
 | `SIM_SPEED` | 10 | Phase 4 demo rehearsal |
 | `VERIFY_WINDOW_SIM_S` | 180 | Phase 1 (must exceed max re-degrade delay) |
@@ -1046,11 +1074,18 @@ HINDSIGHT_BASE_URL=https://api.hindsight.vectorize.io
 HINDSIGHT_API_KEY=
 HINDSIGHT_BANK_LIVE=memoryops-live
 HINDSIGHT_BANK_SEEDED=memoryops-seeded
-# Groq
+# LLM: OpenAI primary, Groq fallback
+OPENAI_API_KEY=
+OPENAI_REASONING_EFFORT=none
 GROQ_API_KEY=
 GROQ_BASE_URL=https://api.groq.com/openai/v1
-LLM_PRIMARY_MODEL=openai/gpt-oss-120b
-LLM_FALLBACK_MODEL=qwen/qwen3.8-27b
+LLM_PRIMARY_PROVIDER=openai
+LLM_PRIMARY_MODEL=gpt-5.4-mini
+LLM_FALLBACK_PROVIDER=groq
+LLM_FALLBACK_MODEL=openai/gpt-oss-120b
+# Spend tracking
+USAGE_DB_PATH=./data/usage.db
+LLM_SPEND_CAP_USD=10
 # Langfuse
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=

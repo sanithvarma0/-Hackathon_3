@@ -44,6 +44,7 @@ from backend.schemas import (
 from backend.simulator import db
 from backend.simulator.clock import Clock
 from backend.simulator.incidents import (
+    CORRECT_FIX,
     LOG_TEMPLATES,
     NOISE_LOGS,
     IncidentSpec,
@@ -600,6 +601,7 @@ class Simulator:
                 )
                 self._event(mid, now, "escalation", f"{incident_id} escalated to on-call engineer")
                 self._close(incident_id, "escalated", action, penalty=self._escalation_penalty)
+                self._record_engineer_fix(incident_id, fault)
                 return ActionReceipt(
                     incident_id=incident_id,
                     action=action,
@@ -726,6 +728,27 @@ class Simulator:
             self._close(incident_id, "resolved", last["action"], penalty=0)
             return self.get_incident(incident_id)
 
+    def _record_engineer_fix(self, incident_id: str, fault: _Fault) -> None:
+        """The on-call engineer diagnoses and fixes an escalated incident and notes it on the
+        ticket. Ambiguous incidents are fixed outside the agent's action set."""
+        fix = CORRECT_FIX[fault.spec.type]
+        mid = fault.spec.machine_id
+        notes: dict[str, str] = {
+            "ROLLBACK_CONFIG": f"rolled back the latest config deploy on {mid}",
+            "RECALIBRATE_SENSOR": f"recalibrated the sensors on {mid}; readings were drifting",
+            "RESTART_GATEWAY": f"restarted gateway {MACHINES[mid].gateway}",
+            "CLEAR_CACHE": f"cleared the controller caches on {mid}; memory was exhausted",
+        }
+        if fix == "ESCALATE_HUMAN":
+            action, note = None, f"replaced a failing controller I/O module on {mid}"
+        else:
+            action, note = fix, notes[fix]
+        self._conn.execute(
+            "UPDATE incidents SET engineer_action = ?, engineer_note = ? WHERE id = ?",
+            (action, f"On-call engineer {note}.", incident_id),
+        )
+        self._conn.commit()
+
     def _close(
         self, incident_id: str, status: IncidentStatus, action: Action, *, penalty: int
     ) -> None:
@@ -737,7 +760,11 @@ class Simulator:
             "mttr_sim_s = ? WHERE id = ?",
             (status, now, action, mttr, incident_id),
         )
+        affected = self._fault.affected if self._fault is not None else ()
         self._fault = None
+        for mid in affected:  # the fix is in: refresh readings now, not at the next tick
+            self._current[mid] = self._sample(mid, self._last_step, advance=False)
+        self._write_machines()
         self._conn.commit()
         self._notify("incident_closed", incident_id, now, status)
 
@@ -904,6 +931,8 @@ class Simulator:
                 human_wait_sim_s=row["human_wait_sim_s"],
                 resolution_action=row["resolution_action"],
                 mttr_sim_s=row["mttr_sim_s"],
+                engineer_action=row["engineer_action"],
+                engineer_note=row["engineer_note"],
             )
 
     def list_incidents(self) -> list[Incident]:

@@ -94,3 +94,15 @@ def test_tool_results_use_relative_times():
         json.dumps({"machine_id": "M2", "metric": "throughput_pct", "window_hours": 1}),
     )
     assert history.ok and "first=" in history.text and "min ago" in history.text
+
+
+def test_metrics_show_the_calibration_schedule():
+    """Regression (live dry run): the model read calibration_age=41d as 'not a calibration
+    issue'. A maintenance system shows the schedule next to the age, so the tool does too."""
+    world = World()
+    world.sim.trigger_incident("sensor_drift", "M2")
+    world.advance(600)
+    text = run_tool(world.adapter, "get_machine_metrics", json.dumps({"machine_id": "M2"})).text
+    assert "due every 30d, OVERDUE by" in text
+    healthy = run_tool(world.adapter, "get_machine_metrics", json.dumps({"machine_id": "M1"}))
+    assert "next due in" in healthy.text

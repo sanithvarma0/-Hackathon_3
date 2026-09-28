@@ -6,7 +6,7 @@ import httpx
 import openai
 import pytest
 
-from backend.llm import LLMClient, LLMUnavailable, strip_think
+from backend.llm import LLMClient, LLMUnavailable, ModelRoute, strip_think
 from tests.fakes import completion
 
 REQUEST = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
@@ -39,8 +39,12 @@ async def no_sleep(_: float) -> None:
     return None
 
 
+def routes(create: Any, *models: str) -> list[ModelRoute]:
+    return [ModelRoute("fake", m, create) for m in models]
+
+
 def client(script: Script, **kw: Any) -> LLMClient:
-    return LLMClient(script.create, ["primary", "fallback"], sleep=no_sleep, **kw)
+    return LLMClient(routes(script.create, "primary", "fallback"), sleep=no_sleep, **kw)
 
 
 async def test_retries_transient_errors_then_succeeds():
@@ -67,7 +71,7 @@ async def test_rate_limit_on_the_last_model_is_retried():
         status_error(429, "rate_limit_exceeded"),
         completion("ok"),
     )
-    llm = LLMClient(script.create, ["only"], sleep=no_sleep)
+    llm = LLMClient(routes(script.create, "only"), sleep=no_sleep)
     assert (await llm.chat([{"role": "user", "content": "hi"}])).content == "ok"
 
 
@@ -132,7 +136,9 @@ async def test_requests_suppress_reasoning_and_pin_sampling():
         captured.update(kw)
         return completion("ok")
 
-    await LLMClient(create, ["m"], seed=42).chat([{"role": "user", "content": "x"}], json_mode=True)
+    await LLMClient(
+        [ModelRoute("groq", "m", create, {"extra_body": {"include_reasoning": False}})], seed=42
+    ).chat([{"role": "user", "content": "x"}], json_mode=True)
     assert captured["extra_body"] == {"include_reasoning": False}
     assert captured["temperature"] == 0.0 and captured["seed"] == 42
     assert captured["response_format"] == {"type": "json_object"}
@@ -162,6 +168,6 @@ async def test_last_model_waits_as_long_as_the_provider_asks():
         },
     )
     script = Script(err, completion("ok"))
-    llm = LLMClient(script.create, ["only"], sleep=record_sleep, budget_s=45)
+    llm = LLMClient(routes(script.create, "only"), sleep=record_sleep, budget_s=45)
     assert (await llm.chat([{"role": "user", "content": "hi"}])).content == "ok"
     assert waits and 8.2 < waits[0] < 9.0

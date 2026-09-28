@@ -92,9 +92,14 @@ async def learn(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
         outcome="escalated" if resolution.status == "escalated" else "successful",
         mttr_sim_s=resolution.mttr_sim_s,
         cited_incidents=rec.get("cited_incidents", []),
+        engineer_action=resolution.engineer_action,
+        engineer_note=resolution.engineer_note,
     )
     text = render_episode(episode)
-    final_action = attempts[-1].action if attempts else "ESCALATE_HUMAN"
+    # What actually fixed it: the engineer's action after an escalation, else the agent's last.
+    final_action = resolution.engineer_action or (
+        attempts[-1].action if attempts else "ESCALATE_HUMAN"
+    )
     record = MemoryRecord(
         document_id=incident_id,
         incident_id=incident_id,

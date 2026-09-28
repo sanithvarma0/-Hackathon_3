@@ -70,6 +70,8 @@ MACHINES: dict[str, MachineProfile] = {
     )
 }
 
+CALIBRATION_INTERVAL_DAYS = 30  # maintenance schedule; calibration events say "next due in 30 days"
+
 GATEWAYS: dict[str, tuple[str, ...]] = {"GW-A": ("M1", "M2", "M5"), "GW-B": ("M3", "M4")}
 
 LINE: tuple[str, ...] = ("M1", "M2", "M3", "M4")

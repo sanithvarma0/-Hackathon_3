@@ -89,6 +89,8 @@ class SimulatorLifecycle:
                 status="escalated" if incident.status == "escalated" else "resolved",
                 mttr_sim_s=incident.mttr_sim_s,
                 human_wait_sim_s=incident.human_wait_sim_s,
+                engineer_action=incident.engineer_action,
+                engineer_note=incident.engineer_note,
             )
 
         return _translate(close)

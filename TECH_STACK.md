@@ -1,7 +1,9 @@
-# 🔒 TECH STACK — FROZEN (v1.4)
+# 🔒 TECH STACK — FROZEN (v1.8)
 
 All decisions are locked. This is the definitive reference for the rest of the hackathon. BUILD_PLAN.md is the implementation spec; this file is the "what and why".
 
+> **v1.8 changes:** LLM primary switched from Groq to **OpenAI `gpt-5.4-mini`** after measuring Groq's free-tier limit (8,000 tokens/min) as the cause of the only failed dry runs; Groq `gpt-oss-120b` stays as a cross-provider fallback. Gemini evaluated and rejected (503 on every current model). Added a persistent usage ledger with per-call tokens and cost, and a hard spend cap.
+>
 > **v1.4 changes:** production-grade tooling — GitHub Actions CI (ruff, mypy, pytest, frontend build; no secrets), `mypy`, `make` targets, docker compose, matplotlib for eval charts, ADRs in `docs/adr/`; environment adapter boundary; evaluation suite and seeded history added to the decision log. No new runtime services.
 >
 > **v1.3 changes:** Phase 0.5 spikes run against the real services: fallback model is now `qwen/qwen3.8-27b` (Groq retired `qwen/qwen3-32b`); memory matches are gated on Hindsight's reranker score relative to the top result (semantic cosine measured as non-discriminative). Results: BUILD_PLAN.md Section 14.
@@ -23,7 +25,8 @@ All decisions are locked. This is the definitive reference for the rest of the h
 | 5 | **Human-in-the-loop** | LangGraph `interrupt()` + `InMemorySaver` checkpointer | `thread_id = incident_id`, resume with `Command(resume=...)` |
 | 6 | **Harness** | Custom-built (~150 lines) | Reference: `agent-service-toolkit` (JoshuaC215) |
 | 7 | **Protocol** | None — FastAPI REST + one global SSE stream | `sse-starlette`, Last-Event-ID replay |
-| 8 | **LLM** | Groq via OpenAI-compatible API | `openai` SDK, `base_url=https://api.groq.com/openai/v1` · Primary `openai/gpt-oss-120b` · Fallback `qwen/qwen3.8-27b` (env-configurable; `qwen/qwen3-32b` is no longer served) · handles `tool_use_failed` (HTTP 400 + `failed_generation`) · `include_reasoning: false` |
+| 8 | **LLM** | OpenAI primary, Groq fallback (both via the `openai` SDK) | Primary `gpt-5.4-mini` (`reasoning_effort=none`, `temperature=0`, `seed=42` — the only combination that supports tools, measured) · Fallback Groq `openai/gpt-oss-120b` (`include_reasoning: false`) · per-route parameters · `tool_use_failed` salvage · unsupported-parameter auto-drop |
+| 8b | **Spend tracking** | `backend/usage.py` usage ledger (SQLite) | Every LLM call: tokens (in / cached / out / reasoning), cost from OpenAI's published prices, latency, incident, step · Hindsight retain tokens · hard cap `LLM_SPEND_CAP_USD` · `make usage` |
 | 9 | **Observability** | Langfuse Cloud (free tier) | `from langfuse.openai import OpenAI` (auto-traces LLM calls) + `@observe` on graph nodes/tools |
 | 10 | **Database** | SQLite | Simulator state, metrics, episode outbox |
 | 11 | **Vector Store** | None | Hindsight is the vector store |
@@ -144,7 +147,8 @@ Keep this — you'll need it for the *"Explanation of how Hindsight memory is us
 | LangGraph `interrupt()` for approval | Least code for pausing a graph mid-run and resuming it from an HTTP call |
 | No vector DB | Hindsight IS the vector store — adding ChromaDB would be redundant architecture |
 | SQLite | 5 machines don't need Postgres; zero-setup, single-file, judges can open it |
-| Groq via OpenAI SDK | Recommended by organizers; fast enough for live traces; the OpenAI-compatible endpoint makes Langfuse tracing a one-line import |
+| OpenAI `gpt-5.4-mini` primary, Groq fallback | Groq (organizer-recommended) measured at 8,000 tokens/min on the free tier — the cause of the only failed dry runs; OpenAI's quota for this key is 180M/min, ~$0.011/incident. Two providers means one provider's outage never stops the agent. Same OpenAI SDK for both keeps Langfuse tracing a one-line import |
+| Measured spend, hard cap | Every call's tokens and cost are in a ledger; a cap turns a runaway loop into an escalation instead of a bill |
 | Langfuse | Open-source observability; traces prove the agent's reasoning is real, not hardcoded |
 | Ops dashboard, not chat | The judge creates incidents in a simulator — this is a closed-loop system, not a chatbot |
 | One global SSE stream | Opened once at page load: no subscribe race, trivial reconnect with replay |

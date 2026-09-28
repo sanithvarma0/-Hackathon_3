@@ -105,12 +105,15 @@ async def investigate(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                                 "result": result.text,
                             },
                         )
-                        content = f"[step {step_no}] {result.text}"
+                        content = (
+                            f"[step {step_no}] {result.text}\n({budget.remaining} tool calls "
+                            f"left; conclude with the JSON as soon as the cause is clear)"
+                        )
                     messages.append({"role": "tool", "tool_call_id": call_id, "content": content})
             summary = await _parse_summary(deps, messages, final)
         except LLMUnavailable as e:
             llm_errors.append(str(e))
-            deps.emit("error", incident_id, {"code": "LLM_UNAVAILABLE", "message": str(e)})
+            deps.emit("error", incident_id, {"code": e.code, "message": str(e)})
             summary = InvestigationSummary(summary=f"Investigation incomplete: {e}", complete=False)
         span.update(output=summary.model_dump())
 

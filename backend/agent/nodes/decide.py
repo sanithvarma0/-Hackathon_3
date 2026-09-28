@@ -75,7 +75,7 @@ async def decide(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                 rec = validate_recommendation(retry.content, matched_ids)
         except LLMUnavailable as e:
             llm_errors.append(str(e))
-            deps.emit("error", incident_id, {"code": "LLM_UNAVAILABLE", "message": str(e)})
+            deps.emit("error", incident_id, {"code": e.code, "message": str(e)})
             rec = _escalation(f"LLM unavailable ({e}); escalated to the on-call engineer.", "")
         except GuardrailViolation as e:
             deps.emit("error", incident_id, {"code": "INVALID_RECOMMENDATION", "message": str(e)})

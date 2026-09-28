@@ -58,6 +58,17 @@ async def check_hindsight(client: httpx.AsyncClient, s: Settings) -> DependencyH
     )
 
 
+async def check_openai(client: httpx.AsyncClient, s: Settings) -> DependencyHealth:
+    if not s.openai_api_key:
+        return DependencyHealth(name="openai", status="not_configured")
+    return await _probe(
+        client,
+        "openai",
+        f"{s.openai_base_url.rstrip('/')}/models",
+        headers={"Authorization": f"Bearer {s.openai_api_key}"},
+    )
+
+
 async def check_groq(client: httpx.AsyncClient, s: Settings) -> DependencyHealth:
     if not s.groq_api_key:
         return DependencyHealth(name="groq", status="not_configured")
@@ -84,6 +95,9 @@ async def check_langfuse(client: httpx.AsyncClient, s: Settings) -> DependencyHe
 async def check_all(s: Settings) -> HealthReport:
     async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
         deps = await asyncio.gather(
-            check_hindsight(client, s), check_groq(client, s), check_langfuse(client, s)
+            check_hindsight(client, s),
+            check_openai(client, s),
+            check_groq(client, s),
+            check_langfuse(client, s),
         )
     return HealthReport(ok=all(d.status == "ok" for d in deps), dependencies=list(deps))

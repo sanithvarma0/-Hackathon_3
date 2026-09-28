@@ -94,7 +94,10 @@ async def test_attempts_exhausted_escalates():
 
     assert result.state["final"]["status"] == "escalated"
     assert world.sim.get_incident(incident_id).status == "escalated"
-    assert "escalate to a human engineer early" in h.memory.records[incident_id].text
+    episode = h.memory.records[incident_id]
+    assert "On-call engineer rolled back the latest config deploy on M3" in episode.text
+    assert "next time recommend ROLLBACK_CONFIG for this signature directly" in episode.text
+    assert episode.metadata["final_action"] == "ROLLBACK_CONFIG"  # what actually fixed it
 
 
 async def test_human_approval_pauses_and_resumes_with_wait_excluded():
@@ -287,3 +290,25 @@ async def test_incomplete_investigation_escalates_and_never_decides_from_memory_
     assert groq.decide_prompts() == []  # no LLM decision without evidence
     assert len(memory.recalls) == recalls_before + 1  # hints only; no evidence search
     assert any(d.get("reason") for k, _, d in h.events if k == "memory_skipped")
+
+
+async def test_the_agent_learns_what_the_engineer_did_after_an_escalation():
+    """Day 1: the agent is unsure and escalates; the engineer recalibrates. Day 2: memory
+    carries the engineer's fix to the next incident with the same signature."""
+    world = World()
+    memory = FakeMemory()
+    unsure = decision_json("ESCALATE_HUMAN", diagnosis="unclear thermal fault", confidence=0.4)
+    day1 = Harness(world, ScriptedGroq("M2", [unsure]), memory)
+    first_id = incident(world, kind="sensor_drift", machine="M2")
+    r1 = await AgentRunner(day1.deps).start(first_id, memory_enabled=True, approval="auto")
+    assert r1.state["final"]["status"] == "escalated"
+    assert r1.state["final"]["mttr_sim_s"] >= 1800  # the escalation penalty
+
+    groq = ScriptedGroq("M2", [decision_json("RECALIBRATE_SENSOR", cited_incidents=[first_id])])
+    day2 = Harness(world, groq, memory)
+    second_id = incident(world, kind="sensor_drift", machine="M2")
+    r2 = await AgentRunner(day2.deps).start(second_id, memory_enabled=True, approval="auto")
+
+    assert "final fix=RECALIBRATE_SENSOR" in groq.decide_prompts()[0]
+    assert r2.state["final"]["status"] == "resolved"
+    assert r2.state["final"]["mttr_sim_s"] < r1.state["final"]["mttr_sim_s"]

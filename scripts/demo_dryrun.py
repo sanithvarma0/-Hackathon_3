@@ -7,6 +7,7 @@ simulator clock:
   3. config regression on M1, a human applies RESTART first (sabotage)     -> lesson, retry
   4. sensor drift on M2                                                   -> must NOT roll back
   5. config regression on M4 with memory OFF                              -> no memory used
+  6. sensor drift on M5                         -> learns from #4 (incl. an engineer's fix)
 
 Run: uv run python scripts/demo_dryrun.py [--keep] [--quiet]
 """
@@ -40,6 +41,12 @@ SCENARIOS: list[dict[str, Any]] = [
     },
     {"label": "discrimination", "type": "sensor_drift", "machine": "M2", "memory": True},
     {"label": "memory OFF", "type": "config_regression", "machine": "M4", "memory": False},
+    {
+        "label": "sensor drift again, other machine",
+        "type": "sensor_drift",
+        "machine": "M5",
+        "memory": True,
+    },
 ]
 
 VERBOSE_EVENTS = {
@@ -109,13 +116,22 @@ async def main() -> None:
         clock.advance(seconds)
         sim.tick()
 
-    bank_id = f"memoryops-dryrun-{int(time.time())}"
+    run_label = f"dryrun-{int(time.time())}"
+    bank_id = f"memoryops-{run_label}"
     agent = await build_live_agent(
-        settings, sim, conn, bank_id=bank_id, emit=printer(args.quiet), wait_sim=wait_sim
+        settings,
+        sim,
+        conn,
+        bank_id=bank_id,
+        emit=printer(args.quiet),
+        wait_sim=wait_sim,
+        run_label=run_label,
     )
     print(
-        f"bank {bank_id} | models {settings.llm_primary_model} -> {settings.llm_fallback_model}"
-        f" | tracing {'on' if agent.tracer.enabled else 'off'}\n"
+        f"bank {bank_id} | models {' -> '.join(agent.deps.llm.models)}"
+        f" | tracing {'on' if agent.tracer.enabled else 'off'}"
+        f" | spent so far ${agent.ledger.spent_usd():.4f}"
+        f" of ${settings.llm_spend_cap_usd:.2f} cap\n"
     )
     rows = []
     try:
@@ -149,7 +165,12 @@ async def main() -> None:
                 "mttr_sim_min": round(f.get("mttr_sim_s", 0) / 60, 1),
                 "memory_hit": f.get("memory_hit"),
                 "cited": f.get("first_cited_incidents"),
-                "llm_tokens": agent.deps.llm.stats.total_tokens,
+                "llm_tokens": (
+                    u := agent.ledger.totals(incident_id=incident.id, run_label=run_label)
+                ).total_tokens,
+                "llm_calls": u.calls,
+                "cost_usd": round(u.cost_usd, 5),
+                "memory_tokens": u.memory_tokens,
                 "real_s": round(time.perf_counter() - t0, 1),
                 "trace": result.trace_url,
             }
@@ -158,7 +179,8 @@ async def main() -> None:
                 f"  -> {row['status']} | first rec {row['first_rec']} "
                 f"({'correct' if row['first_rec_correct'] else 'WRONG'}) conf {row['confidence']}"
                 f" | tools {row['tool_calls']} | attempts {row['attempts']} | "
-                f"MTTR {row['mttr_sim_min']} sim-min | {row['real_s']} s real\n"
+                f"MTTR {row['mttr_sim_min']} sim-min | {row['real_s']} s real | "
+                f"{row['llm_tokens']} tokens ${row['cost_usd']:.4f}\n"
             )
             if sim.active_incident() is not None:  # a failed run must not block the next one
                 sim.execute_action(incident.id, "ESCALATE_HUMAN")
@@ -167,23 +189,32 @@ async def main() -> None:
 
     print(
         f"\n{'#':<3}{'scenario':<32}{'mem':<5}{'first rec':<20}{'ok':<4}{'conf':<6}"
-        f"{'tools':<7}{'att':<5}{'MTTR':<7}{'cited'}"
+        f"{'tools':<7}{'att':<5}{'MTTR':<7}{'tokens':<9}{'cost':<9}{'cited'}"
     )
     for i, r in enumerate(rows, 1):
         print(
             f"{i:<3}{r['scenario']:<32}{'on' if r['memory'] else 'off':<5}{r['first_rec']:<20}"
             f"{'✓' if r['first_rec_correct'] else '✗':<4}{r['confidence']:<6}"
-            f"{r['tool_calls']:<7}{r['attempts']:<5}{r['mttr_sim_min']:<7}{r['cited']}"
+            f"{r['tool_calls']:<7}{r['attempts']:<5}{r['mttr_sim_min']:<7}{r['llm_tokens']:<9}"
+            f"${r['cost_usd']:<8.4f}{r['cited']}"
         )
     out = REPO_ROOT / "scripts" / "results" / f"dryrun-{int(time.time())}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(rows, indent=2))
     stats = agent.deps.llm.stats
+    run = agent.ledger.totals(run_label=run_label)
+    n = max(1, len(rows))
     print(f"\nresults: {out.relative_to(REPO_ROOT)}")
     print(
-        f"LLM: {stats.calls} calls, {stats.total_tokens} tokens "
-        f"({stats.total_tokens // max(1, len(rows))}/incident), {stats.retries} retries, "
-        f"{stats.fallbacks} fallbacks, {stats.salvaged} salvaged"
+        f"LLM: {run.calls} calls, {run.total_tokens} tokens ({run.total_tokens // n}/incident; "
+        f"{run.prompt_tokens} in, {run.cached_tokens} cached, {run.completion_tokens} out, "
+        f"{run.reasoning_tokens} reasoning), {stats.retries} retries, {stats.fallbacks} fallbacks, "
+        f"{stats.salvaged} salvaged"
+    )
+    print(
+        f"COST: ${run.cost_usd:.4f} this run (${run.cost_usd / n:.4f}/incident) | "
+        f"all-time ${agent.ledger.spent_usd():.4f} of ${settings.llm_spend_cap_usd:.2f} cap | "
+        f"Hindsight retain tokens {run.memory_tokens}"
     )
     if not args.keep:
         await _delete_bank(settings, bank_id)
