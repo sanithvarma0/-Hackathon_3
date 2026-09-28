@@ -4,6 +4,7 @@ Interactive API docs (OpenAPI) at /docs. Every refusal is a structured JSON erro
 `{"code", "message"}` and also an `error` event on the stream — never a stack trace.
 """
 
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any, Literal
@@ -17,8 +18,14 @@ from sse_starlette.sse import EventSourceResponse
 from backend.agent.deps import Emit, WaitSim
 from backend.config import Settings, get_settings
 from backend.health import HealthReport, check_all
-from backend.schemas import PREDEFINED_TYPES, Action, CustomIncidentSpec, IncidentType
-from backend.service import AgentHandle, IncidentView, MemoryOpsService, ServiceError
+from backend.schemas import PREDEFINED_TYPES, Action, CustomIncidentSpec, IncidentType, Metric
+from backend.service import (
+    AgentHandle,
+    IncidentView,
+    MemoryOpsService,
+    ServiceError,
+    sim_resume_ts,
+)
 from backend.simulator import RealtimeClock, Simulator
 from backend.simulator.db import connect
 from backend.wiring import build_live_agent
@@ -68,7 +75,10 @@ class Accepted(BaseModel):
 async def live_service(settings: Settings) -> MemoryOpsService:
     """The real system: realtime simulator + live agent (OpenAI/Groq, Hindsight, Langfuse)."""
     conn = connect(settings.sqlite_path)
-    clock = RealtimeClock(speed=settings.sim_speed)
+    resume = sim_resume_ts(conn)
+    clock = RealtimeClock(
+        speed=settings.sim_speed, start=max(time.time(), resume + 60) if resume else None
+    )
     sim = Simulator(
         conn,
         clock,
@@ -146,11 +156,17 @@ def create_app(service_factory: ServiceFactory = live_service) -> FastAPI:
 
     @app.get("/api/stream", tags=["plant"])
     async def stream(
-        request: Request, last_event_id: str | None = Header(default=None)
+        request: Request,
+        last_event_id: str | None = Header(default=None),
+        since: int | None = None,
     ) -> EventSourceResponse:
-        """One global Server-Sent Events stream. Send `Last-Event-ID` to replay missed events."""
+        """One global Server-Sent Events stream, replaying everything after the given event ID.
+
+        `since` (query) serves the first connection — a browser cannot set headers on it — and
+        the `Last-Event-ID` header, which EventSource sends on every reconnect, wins over it.
+        """
         service = svc(request)
-        last = int(last_event_id) if last_event_id and last_event_id.isdigit() else None
+        last = int(last_event_id) if last_event_id and last_event_id.isdigit() else since
 
         async def events() -> AsyncIterator[dict[str, str]]:
             async for event in service.bus.subscribe(last):
@@ -159,6 +175,13 @@ def create_app(service_factory: ServiceFactory = live_service) -> FastAPI:
                 yield {"id": str(event.id), "data": event.model_dump_json()}
 
         return EventSourceResponse(events(), ping=15)
+
+    @app.get("/api/plant/history", tags=["plant"])
+    async def plant_history(
+        request: Request, metric: Metric = "throughput_pct", minutes: float = 10
+    ) -> dict[str, list[dict[str, float]]]:
+        """Recent history per machine (sim time, 10 s grid, at most 60 points)."""
+        return svc(request).plant_history(metric, minutes)
 
     # ---- incidents --------------------------------------------------------------------------
 

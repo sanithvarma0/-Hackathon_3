@@ -1,7 +1,9 @@
-# 🔒 TECH STACK — FROZEN (v1.8)
+# 🔒 TECH STACK — FROZEN (v2.0)
 
 All decisions are locked. This is the definitive reference for the rest of the hackathon. BUILD_PLAN.md is the implementation spec; this file is the "what and why".
 
+> **v2.0 changes (Phase 4):** shadcn/ui and lucide-react dropped — the handful of components the control room needs (modal, switch, segmented control, toast) are hand-rolled with Tailwind v4 tokens, and icons are text glyphs (● ▲ ✖ ↻ ◆) so no state depends on colour alone and nothing loads from a CDN. Recharts 3 for the Learning tab. Vitest 5 tests the UI reducer (`npm test`, in CI with `tsc --noEmit`).
+>
 > **v1.8 changes:** LLM primary switched from Groq to **OpenAI `gpt-5.4-mini`** after measuring Groq's free-tier limit (8,000 tokens/min) as the cause of the only failed dry runs; Groq `gpt-oss-120b` stays as a cross-provider fallback. Gemini evaluated and rejected (503 on every current model). Added a persistent usage ledger with per-call tokens and cost, and a hard spend cap.
 >
 > **v1.4 changes:** production-grade tooling — GitHub Actions CI (ruff, mypy, pytest, frontend build; no secrets), `mypy`, `make` targets, docker compose, matplotlib for eval charts, ADRs in `docs/adr/`; environment adapter boundary; evaluation suite and seeded history added to the decision log. No new runtime services.
@@ -32,7 +34,7 @@ All decisions are locked. This is the definitive reference for the rest of the h
 | 11 | **Vector Store** | None | Hindsight is the vector store |
 | 12 | **Semantic Layer** | None | Hindsight's 4-way retrieval (semantic + BM25 + graph + temporal, reranked) |
 | 13 | **Backend** | FastAPI | Python 3.11+, Pydantic v2, `pydantic-settings` |
-| 14 | **Frontend** | Next.js (App Router) + Tailwind + shadcn/ui + Recharts | Ops dashboard, not a chat |
+| 14 | **Frontend** | Next.js 16 (App Router) + Tailwind v4 + Recharts + hand-rolled SVG | Industrial control room, not a chat; one pure reducer over the SSE stream |
 | 15 | **Guardrails** | 6 custom rules | Pydantic validation, tool-call cap, action whitelist, dependency retry/fallback, simulator state validation, memory match rule (reranker-relative) |
 | 16 | **Evaluation** | Headless eval suite (`make eval`) + committed report | Paired memory ON/OFF, 3 seeds, bootstrap 95% CIs; accuracy/MTTR/tool calls by exposure, transfer, discrimination, recall@1, Brier calibration, cost — BUILD_PLAN Section 11 |
 | 17 | **Tooling** | `uv` (Python deps + lockfile), `pytest`, `ruff`, `mypy` · `npm` for frontend · `make` · GitHub Actions CI | Versions pinned by lockfiles; CI runs without secrets |
@@ -47,7 +49,7 @@ Dev / eval: `pytest`, `pytest-asyncio`, `ruff`, `mypy`, `matplotlib` (eval chart
 
 ### Frontend dependencies
 
-`next`, `react`, `tailwindcss`, shadcn/ui components (added via CLI), `recharts`, `lucide-react`
+`next`, `react`, `tailwindcss`, `recharts` · dev: `typescript`, `eslint`, `vitest`
 
 ---
 
@@ -57,7 +59,7 @@ Dev / eval: `pytest`, `pytest-asyncio`, `ruff`, `mypy`, `matplotlib` (eval chart
 ┌────────────────────────────────────────────────────────────┐
 │                    NEXT.JS FRONTEND                         │
 │   Dashboard + Incident panel │ Memory Browser │ Learning    │
-│   (shadcn/ui + Recharts, one global SSE stream)             │
+│   (Tailwind + Recharts + SVG, one global SSE stream)        │
 └───────────────┬─────────────────────────────▲──────────────┘
                 │ REST                        │ SSE
                 ▼                             │
@@ -154,6 +156,8 @@ Keep this — you'll need it for the *"Explanation of how Hindsight memory is us
 | One global SSE stream | Opened once at page load: no subscribe race, trivial reconnect with replay |
 | Environment adapter boundary | The agent sees six typed methods; the simulator is one implementation — the production answer to "how would this work on real infrastructure?" (ADR-0003) |
 | Measured evaluation suite | Every number we show comes from a committed, reproducible report; paired ON/OFF with CIs, not anecdotes |
+| One pure reducer over the SSE stream | A reloaded page replays stored events through the same code a watching page runs, so both show the same state — tested |
+| Visual signatures from observable metrics only | The floor never reveals what the agent must diagnose; random/custom incidents stay hidden until closed |
 | Seeded history from simulator facts + LLM narrative | Realistic and internally consistent; kept out of eval banks so it can't inflate learning curves |
 
 Full reasoning for the key decisions lives in `docs/adr/` (BUILD_PLAN 17.3).

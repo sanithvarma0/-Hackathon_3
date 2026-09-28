@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS bus_events (
     data TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_bus_events_incident ON bus_events (incident_id, id);
+CREATE TABLE IF NOT EXISTS bus_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 """
 
 EPHEMERAL = {"state_changed"}  # high-frequency ticks: streamed, never persisted
@@ -51,7 +52,12 @@ class EventBus:
         self._next_id = 1
         if conn is not None:
             conn.executescript(SCHEMA)
-            row = conn.execute("SELECT COALESCE(MAX(id), 0) FROM bus_events").fetchone()
+            # Ticks are not persisted but still consume IDs, so the high-water mark is stored
+            # too: after a restart IDs must never go below what a browser has already seen.
+            row = conn.execute(
+                "SELECT MAX(COALESCE((SELECT MAX(id) FROM bus_events), 0), "
+                "COALESCE((SELECT value FROM bus_meta WHERE key = 'last_id'), 0))"
+            ).fetchone()
             self._next_id = int(row[0]) + 1
 
     def publish(self, type: str, incident_id: str | None, data: dict[str, Any]) -> BusEvent:
@@ -60,17 +66,28 @@ class EventBus:
         )
         self._next_id += 1
         self._buffer.append(event)
-        if self._conn is not None and type not in EPHEMERAL:
-            self._conn.execute(
-                "INSERT INTO bus_events (id, ts, type, incident_id, data) VALUES (?, ?, ?, ?, ?)",
-                (event.id, event.ts, type, incident_id, json.dumps(data, default=str)),
-            )
+        if self._conn is not None:
+            if type in EPHEMERAL:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO bus_meta (key, value) VALUES ('last_id', ?)",
+                    (event.id,),
+                )
+            else:
+                self._conn.execute(
+                    "INSERT INTO bus_events (id, ts, type, incident_id, data) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (event.id, event.ts, type, incident_id, json.dumps(data, default=str)),
+                )
             self._conn.commit()
         for q in list(self._subscribers):
             if q.full():
                 q.get_nowait()  # drop this slow subscriber's oldest event
             q.put_nowait(event)
         return event
+
+    @property
+    def last_id(self) -> int:
+        return self._next_id - 1
 
     def since(self, last_id: int) -> list[BusEvent]:
         return [e for e in self._buffer if e.id > last_id]

@@ -14,8 +14,9 @@ frontend:         ## run the dashboard on :3000
 dev:              ## run backend and frontend together
 	$(MAKE) -j2 backend frontend
 
-test:             ## pytest (no network, no keys)
+test:             ## backend pytest + frontend reducer tests (no network, no keys)
 	uv run pytest
+	cd frontend && npm test
 
 lint:             ## ruff lint + format check, frontend eslint
 	uv run ruff check .
@@ -26,8 +27,9 @@ format:           ## auto-format Python
 	uv run ruff format .
 	uv run ruff check --fix .
 
-typecheck:        ## mypy --strict on the backend
+typecheck:        ## mypy --strict on the backend, tsc on the frontend
 	uv run mypy backend
+	cd frontend && npm run typecheck
 
 check: lint typecheck test  ## everything CI runs (except the frontend build)
 

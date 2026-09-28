@@ -2,7 +2,7 @@
 
 **A self-learning production incident commander.** A simulated 5-machine factory develops incidents; a single LangGraph agent investigates, recommends a fix, and — through [Hindsight](https://hindsight.vectorize.io) memory — resolves recurring incident classes faster and more accurately every time.
 
-> Status: **Phase 3 done** — FastAPI service with one global SSE stream (Last-Event-ID replay), human-in-the-loop over HTTP, spend and token tracking at `/api/usage`, no-spoiler incident views; 189 tests; live smoke test in BUILD_PLAN.md 14.1d. See [BUILD_PLAN.md](BUILD_PLAN.md) for the full specification and [TECH_STACK.md](TECH_STACK.md) for the stack and decision log.
+> Status: **Phase 4 done** — the control-room UI: live plant floor with per-class visual signatures, streaming investigation trace, purple memory panel, human-in-the-loop recommendation card, Memory Browser with the self-written runbook, Learning tab; verified in a real browser against live services (BUILD_PLAN.md 14.1e). 193 backend + 15 frontend tests. See [BUILD_PLAN.md](BUILD_PLAN.md) for the full specification and [TECH_STACK.md](TECH_STACK.md) for the stack and decision log.
 
 ## Prerequisites
 
@@ -18,14 +18,27 @@ uv sync                     # backend deps
 cd frontend && npm install  # frontend deps
 ```
 
+## The control room
+
+![Plant floor with a live recommendation: memory hints and matched incidents in purple](docs/screenshots/floor-recommendation.png)
+
+| Network failure (1440×900) | Memory Browser + self-written runbook | Learning |
+|---|---|---|
+| ![](docs/screenshots/network-failure-1440.png) | ![](docs/screenshots/memory-browser.png) | ![](docs/screenshots/learning.png) |
+
+Screenshots from a real session against live services (BUILD_PLAN.md 14.1e) — including the incident where memory misled the agent.
+
 ## Run
 
 ```bash
 # backend (http://localhost:8000)
 uv run uvicorn backend.main:app --reload
 
-# frontend (http://localhost:3000)
+# frontend — the control room (http://localhost:3000)
 cd frontend && npm run dev
+
+# or both at once
+make dev
 ```
 
 Check `http://localhost:8000/api/health` — every dependency should report `ok`.

@@ -5,12 +5,12 @@ import { getHealth, type DependencyStatus, type HealthReport } from "@/lib/api";
 
 const POLL_MS = 10_000;
 
-const STATUS_STYLE: Record<DependencyStatus, string> = {
-  ok: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
-  not_configured: "bg-zinc-500/15 text-zinc-300 ring-zinc-500/30",
-  unreachable: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
-  auth_failed: "bg-red-500/15 text-red-300 ring-red-500/30",
-  error: "bg-red-500/15 text-red-300 ring-red-500/30",
+const STATUS_COLOR: Record<DependencyStatus, string> = {
+  ok: "var(--color-healthy)",
+  not_configured: "var(--color-muted)",
+  unreachable: "var(--color-degraded)",
+  auth_failed: "var(--color-critical)",
+  error: "var(--color-critical)",
 };
 
 export default function HealthPanel() {
@@ -37,24 +37,17 @@ export default function HealthPanel() {
   }, []);
 
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5">
-      <h2 className="mb-4 font-mono text-xs uppercase tracking-widest text-zinc-400">
-        System health
-      </h2>
-      {backendError && (
-        <p className="font-mono text-sm text-red-300">Backend unreachable: {backendError}</p>
-      )}
-      {!report && !backendError && <p className="font-mono text-sm text-zinc-500">Checking…</p>}
+    <section>
+      <h2 className="mb-3 font-mono text-xs font-semibold tracking-widest text-muted">SYSTEM HEALTH</h2>
+      {backendError && <p className="font-mono text-sm text-critical">Backend unreachable: {backendError}</p>}
+      {!report && !backendError && <p className="font-mono text-sm text-muted">Checking…</p>}
       {report && (
         <ul className="space-y-2">
           {report.dependencies.map((d) => (
             <li key={d.name} className="flex items-center justify-between gap-4 font-mono text-sm">
-              <span className="text-zinc-200">{d.name}</span>
-              <span
-                title={d.detail}
-                className={`rounded px-2 py-0.5 text-xs ring-1 ${STATUS_STYLE[d.status]}`}
-              >
-                {d.status}
+              <span className="text-text">{d.name}</span>
+              <span title={d.detail} style={{ color: STATUS_COLOR[d.status] }}>
+                ● {d.status.replace("_", " ")}
               </span>
             </li>
           ))}

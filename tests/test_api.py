@@ -22,7 +22,7 @@ from backend.llm import LLMClient, ModelRoute
 from backend.main import create_app
 from backend.memory.outbox import MemoryWriter
 from backend.observability import Tracer
-from backend.service import AgentHandle, MemoryOpsService
+from backend.service import AgentHandle, MemoryOpsService, sim_resume_ts
 from backend.simulator import ManualClock, Simulator
 from backend.simulator.db import connect
 from backend.usage import CallUsage, UsageLedger, current_incident
@@ -320,6 +320,24 @@ async def test_incident_ids_continue_across_a_backend_restart():
     await second.service.stop()
 
 
+async def test_sim_time_resumes_after_the_latest_episode():
+    conn = connect(":memory:")
+    assert sim_resume_ts(conn) is None  # fresh database
+    first = Rig(conn)
+    await first.service.start()
+    incident_id = (
+        await first.http.post(
+            "/api/incident/predefined", json={"type": "config_regression", "machine": "M3"}
+        )
+    ).json()["id"]
+    await first.until_awaiting(incident_id)
+    await first.http.post(f"/api/incident/{incident_id}/action", json={"action": "ROLLBACK_CONFIG"})
+    await first.service.drain()
+    await first.service.stop()
+    resume = sim_resume_ts(conn)
+    assert resume is not None and resume > START  # the run moved sim time forward
+
+
 # ---- the event bus behind the stream ----------------------------------------------------------
 
 
@@ -352,6 +370,16 @@ async def test_bus_ids_survive_restarts_and_ticks_are_not_persisted():
     assert [e.type for e in reopened.incident_events("INC-001")] == ["tool_call", "outcome"]
 
 
+async def test_bus_ids_never_go_backwards_after_ticks_and_a_restart():
+    # A browser that saw tick #3 must not receive a new incident event with an ID <= 3.
+    conn = connect(":memory:")
+    bus = EventBus(conn)
+    bus.publish("tool_call", "INC-001", {})
+    bus.publish("state_changed", None, {})
+    bus.publish("state_changed", None, {})
+    assert EventBus(conn).publish("incident_triggered", "INC-002", {}).id == 4
+
+
 async def test_stream_endpoint_replays_from_last_event_id(rig: Rig):
     # httpx's ASGI transport buffers whole bodies, so an endless SSE stream needs a real server.
     rig.service.bus.publish("tool_call", "INC-001", {"step": 1})
@@ -373,20 +401,42 @@ async def test_stream_endpoint_replays_from_last_event_id(rig: Rig):
             if server.started:
                 break
             await asyncio.sleep(0.05)
-        lines: list[str] = []
-        async with (
-            httpx.AsyncClient(timeout=5) as client,
-            client.stream(
-                "GET", f"http://127.0.0.1:{port}/api/stream", headers={"Last-Event-ID": str(last)}
-            ) as resp,
-        ):
-            assert resp.headers["content-type"].startswith("text/event-stream")
-            async for line in resp.aiter_lines():
-                if line.startswith("data:"):
-                    lines.append(line)
-                    break
+        url = f"http://127.0.0.1:{port}/api/stream"
+        first = await _first_sse_event(url, headers={"Last-Event-ID": str(last)})
+        initial = await _first_sse_event(f"{url}?since={last}", headers={})  # first connect
+        header_wins = await _first_sse_event(
+            f"{url}?since=0", headers={"Last-Event-ID": str(last)}
+        )  # a reconnect
     finally:
         server.should_exit = True
         thread.join(5)
-    payload = json.loads(lines[0].removeprefix("data:").strip())
-    assert payload["type"] == "tool_call" and payload["data"] == {"step": 2}
+    for payload in (first, initial, header_wins):
+        assert payload["type"] == "tool_call" and payload["data"] == {"step": 2}
+
+
+async def _first_sse_event(url: str, headers: dict[str, str]) -> dict[str, Any]:
+    async with (
+        httpx.AsyncClient(timeout=5) as client,
+        client.stream("GET", url, headers=headers) as resp,
+    ):
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        async for line in resp.aiter_lines():
+            if line.startswith("data:"):
+                event: dict[str, Any] = json.loads(line.removeprefix("data:").strip())
+                return event
+    raise AssertionError("stream ended without an event")
+
+
+async def test_state_tells_the_ui_where_to_open_the_stream(rig: Rig):
+    rig.service.bus.publish("tool_call", "INC-001", {})
+    body = (await rig.http.get("/api/state")).json()
+    assert body["last_event_id"] == rig.service.bus.since(0)[-1].id
+
+
+async def test_plant_history_backfills_sparklines(rig: Rig):
+    rig.clock.advance(600)
+    body = (await rig.http.get("/api/plant/history", params={"minutes": 10})).json()
+    assert set(body) == {"M1", "M2", "M3", "M4", "M5"}
+    assert 50 <= len(body["M3"]) <= 61 and all(0 < p["value"] <= 100 for p in body["M3"])
+    assert (await rig.http.get("/api/plant/history", params={"metric": "nope"})).status_code == 422
+    assert (await rig.http.get("/api/plant/history", params={"minutes": 999})).status_code == 422

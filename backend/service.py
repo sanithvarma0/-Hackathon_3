@@ -30,6 +30,7 @@ from backend.schemas import (
     CustomIncidentSpec,
     Incident,
     IncidentType,
+    Metric,
 )
 from backend.simulator import ManualClock, SimNotification, Simulator, SimulatorError
 from backend.simulator.clock import Clock
@@ -41,6 +42,17 @@ AgentStatus = Literal[
 TICK_S = 1.0
 OUTBOX_RETRY_S = 30.0
 RUNBOOK_POLL_S = 20.0
+
+
+def sim_resume_ts(conn: sqlite3.Connection) -> float | None:
+    """Latest sim time memory has recorded. The simulated clock runs ahead of the wall clock
+    (SIM_SPEED), so a restarted backend resumes from here: sim time must never go backwards,
+    or new episodes would predate old ones."""
+    try:
+        row = conn.execute("SELECT MAX(created_ts) FROM episodes").fetchone()
+    except sqlite3.OperationalError:  # fresh database: no episodes table yet
+        return None
+    return None if row is None or row[0] is None else float(row[0])
 
 
 def _new_run_label() -> str:
@@ -248,6 +260,7 @@ class MemoryOpsService:
             "active_incident": self.view(active).model_dump() if active else None,
             "bank_id": self.bank_id,
             "sim_speed": self.settings.sim_speed if self.realtime else None,
+            "last_event_id": self.bus.last_id,  # open the stream from here: nothing missed
         }
 
     def memory_records(self) -> list[dict[str, Any]]:
@@ -277,6 +290,18 @@ class MemoryOpsService:
                 {"provider": p, "model": m, "calls": c, "tokens": t, "cost_usd": cost}
                 for p, m, c, t, cost in by_model
             ],
+        }
+
+    def plant_history(self, metric: Metric, minutes: float) -> dict[str, list[dict[str, float]]]:
+        """Recent sim history per machine (10 s grid), so sparklines are full on page load."""
+        if not 1 <= minutes <= 180:
+            raise ServiceError(422, "INVALID_WINDOW", "minutes must be between 1 and 180")
+        return {
+            m.machine_id: [
+                {"ts": p.ts, "value": p.value}
+                for p in self.sim.get_metric_history(m.machine_id, metric, minutes / 60)
+            ]
+            for m in self.sim.plant_state().machines
         }
 
     def metric_series(self) -> list[dict[str, Any]]:

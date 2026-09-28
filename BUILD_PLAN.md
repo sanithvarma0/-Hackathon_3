@@ -1,4 +1,7 @@
-# MemoryOps — Build Specification v1.9
+# MemoryOps — Build Specification v2.0
+
+> **v2.0 changes (Phase 4 built — the control room):** the UI state is one pure reducer over the SSE events, so a reloaded page rebuilds exactly what a watching page shows (replay → snapshot → stream from `last_event_id`); any disconnect repeats that boot and shows the designed offline state. Visual incident signatures are driven by **observable metrics only** (config version, temperature, sensor variance, memory, packet loss), never by the hidden class; thresholds come from the simulator's ranges. Purple is honest: a fix that failed *in this incident* is amber, only fixes memory knew about are purple; skipped memory touchpoints are grey. shadcn/ui dropped (a dozen hand-rolled components were smaller than the dependency). Backend additions: `GET /api/plant/history` (sparkline backfill), `?since=` on the stream, `last_event_id` in `/api/state`. **Two restart bugs found by UI testing and fixed:** event IDs could go backwards after a restart (ticks consumed IDs but were not persisted) and sim time restarted at wall-clock time (behind the ×10 sim), so new episodes could predate old ones. **Live finding:** a memory-driven false replay (14.1e) — the eval suite's `false_replay` metric exists for exactly this.
+>
 
 > **v1.9 changes (Phase 3 built):** a `MemoryOpsService` layer sits between FastAPI and the simulator/agent (the HTTP layer only validates and maps errors); endpoints gain `/api/memory/records` (every retained episode and lesson, verbatim) and `/api/usage` (spend + tokens, spend cap); `auto_approve` dropped from the API (the demo is human-in-the-loop, the eval harness auto-approves in-process); `/api/eval/latest` moves to Phase 5 with the eval suite. **No-spoiler rule:** random and custom incidents hide their true class in every response and event until closed. Incident IDs continue across backend restarts (offset from the episode table) and restart at INC-001 only on a wiped reset. Per-incident spend is scoped to the run, not just the incident ID (IDs repeat across runs — a live smoke test caught 4.7x over-counting). The event contract (9) now lists exactly what the code emits.
 >
@@ -64,7 +67,7 @@ Judges see three surfaces — **the repo, the demo, the Q&A**. "Production-grade
 | Backend | **FastAPI** + `sse-starlette` | Python 3.11+. |
 | Database | **SQLite** | Simulator state, metrics, episode outbox. No vector DB. |
 | Observability | **Langfuse** Cloud (free tier) | `langfuse.openai` drop-in + `@observe` on graph nodes. |
-| Frontend | **Next.js (App Router) + Tailwind + shadcn/ui + Recharts** | Ops dashboard. No chat UI. |
+| Frontend | **Next.js (App Router) + Tailwind v4 + Recharts + hand-rolled SVG** | Industrial control room. No chat UI. |
 | Guardrails | Custom (6 rules, Section 8) | Pydantic v2 validation everywhere. |
 
 **Explicitly rejected** (do not add): multi-agent orchestration, MCP/A2A/ACP, DeepAgents, Mem0/Zep/Cognee, any second memory, any vector DB, semantic layer, WrenAI/GenBI, free-text incident input, `hindsight-langgraph` prebuilt nodes (they assume `MessagesState`; our state is custom).
@@ -185,14 +188,14 @@ The repo root **is** the project (no extra `memoryops/` folder).
 │   ├── test_eval_stats.py      # bootstrap / Brier on known inputs
 │   └── test_health.py
 ├── frontend/
-│   ├── app/
-│   │   ├── page.tsx            # Dashboard + live incident panel
-│   │   ├── memory/page.tsx     # Memory Browser
-│   │   └── learning/page.tsx   # Learning curves
-│   ├── components/             # shadcn/ui + custom (MachineCard, TraceLog, ...)
+│   ├── app/page.tsx            # the one screen: top bar, floor | right rail, bottom bar, tabs
+│   ├── components/             # floor/ (PlantFloor, MachineNode), rail/ (Trace, Memory,
+│   │                           #   Recommendation), tabs/ (MemoryBrowser, Learning), TopBar, ...
 │   └── lib/
-│       ├── api.ts              # REST client
-│       └── sse.ts              # EventSource client w/ reconnect
+│       ├── api.ts              # REST client, structured ApiError
+│       ├── reducer.ts          # SSE events → UI state (pure; + reducer.test.ts)
+│       ├── useMemoryOps.ts     # boot: snapshot → replay → stream; resync on disconnect
+│       └── types.ts            # mirrors backend schemas + event contract
 └── scripts/
     ├── spike_hindsight.py      # Phase 0.5: measure recall scores + latency
     ├── spike_groq.py           # Phase 0.5: tool-calling + error shapes on both models
@@ -712,8 +715,10 @@ class Recommendation(BaseModel):
 
 ```
 GET  /api/health                      # reachability of Hindsight / OpenAI / Groq / Langfuse
-GET  /api/state                       # plant (machines, gateways, KPIs) + active incident
-GET  /api/stream                      # SSE — ONE global stream; Last-Event-ID replay
+GET  /api/state                       # plant + active incident + last_event_id (stream cursor)
+GET  /api/plant/history               # ?metric=&minutes= — per-machine sim history (sparklines)
+GET  /api/stream                      # SSE — ONE global stream; ?since= on first connect,
+                                      #   Last-Event-ID header (wins) on reconnect
 POST /api/incident/predefined         # {type, machine?, memory_enabled}
 POST /api/incident/custom             # {spec: CustomIncidentSpec, memory_enabled}  (no free text)
 POST /api/incident/random             # {memory_enabled}
@@ -893,11 +898,19 @@ Monospace for trace, IDs and numbers; system sans for everything else (no font C
 
 ### 10.9 Tech, Timebox & Fallback
 
-- Next.js (App Router) + Tailwind + shadcn/ui + Recharts + **hand-rolled SVG**. No game engine, no canvas library, no Three.js.
+- Next.js (App Router) + Tailwind v4 + Recharts + **hand-rolled SVG**. No game engine, no canvas library, no Three.js. (shadcn/ui was dropped in Phase 4: the dozen components needed — modal, switch, segmented control, toast — were smaller hand-rolled than the dependency.)
 - Animations are CSS (`stroke-dashoffset`, keyframes); React re-renders only on SSE state (~1 Hz), never per animation frame.
 - **Timebox:** 1 day for the plant floor, 1 day for the panels + tabs.
 - **Fallback if the floor overruns:** a clean machine-card grid in line order with arrow connectors and the same states/colours — every panel, event mapping and demo beat still works.
 - **Non-negotiable:** the memory panel, the recommendation card states, and the Learning charts.
+
+### 10.10 As built (Phase 4)
+
+- **State:** `frontend/lib/reducer.ts` is the only place events become UI state; 15 vitest tests cover the lifecycle, trap-fix loop, memory OFF, replay equivalence, stream overlap and server cursor reset. `useMemoryOps` boots snapshot → replay (active or latest incident, no toasts) → stream `?since=last_event_id`; every disconnect re-runs the boot (a restarted backend may have lost the in-flight run; only a fresh snapshot tells the truth).
+- **Signatures from observable metrics** (`components/ui/status.ts`, thresholds from the simulator): `cfg` tick on the sparkline when `config_version` changes; flickering temperature badge at ≥ 65 °C and a jittering trace when sensor variance > 0.1 (baseline ~0.03); memory gauge amber ≥ 70%, `OOM` ≥ 90%; `NET` badge when packet loss > 2%; gateway node and links red/amber from gateway status; flow dims and machines read `STARVED` from the backend's line-flow model. Sparkline axis fixed at 40–100% so a dip looks as deep as it is.
+- **Purple honesty:** `known to fail` chips are purple only when memory supplied them; an action that failed in this incident is an amber `failed this incident` chip. Skipped touchpoints (memory OFF) are grey; retain stays purple even when OFF because the episode really is written (6.4).
+- **Learning tab:** live incidents only (per exposure bucket, ON vs OFF, `n` on every bar, no hardcoded numbers) until the eval report exists (Phase 5); `LOAD 6-MONTH HISTORY` is visibly disabled until Phase 6.
+- **Verified in a real browser** (Playwright + Chromium, 1920×1080 and 1440×900) against the live backend: every state of 7 live incidents, the trap-fix loop, memory OFF, custom builder, wipe confirm, reload mid-incident (identical state) and backend down → offline card → automatic recovery.
 
 ## 11. Evaluation Suite (the differentiator)
 
@@ -1011,7 +1024,7 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 
 **Phase 3 — API + SSE + Mental Model. ✔ DONE** (189 tests; live smoke test 14.1d). ✅ Incident Patterns mental model created at startup and readable after a few incidents; all endpoints work; one global SSE stream carries the full event contract; reconnect replays via Last-Event-ID; human-in-the-loop resume via action endpoint; guardrail violations and dependency failures emit `error` events instead of crashing.
 
-**Phase 4 — Frontend.** ✅ Full demo script (Section 12) runs end-to-end in the browser, including memory toggle, re-degradation animation, and reset.
+**Phase 4 — Frontend. ✔ DONE** (15 frontend + 193 backend tests; live UI session 14.1e; the seeded-history beat waits for Phase 6). ✅ Full demo script (Section 12) runs end-to-end in the browser, including memory toggle, re-degradation animation, and reset.
 
 **Phase 5 — Evaluation suite.** ✅ `make eval --quick` runs end-to-end on live services; full run completes (with `--resume` if interrupted); `docs/eval/<run>/REPORT.md` committed with PASS/FAIL against 11.5; harness covered in CI with fakes; Learning tab reads `results.json`.
 
@@ -1087,6 +1100,27 @@ Two config regressions (M3, then M1) driven entirely over HTTP, recorded from `/
 - All four dependencies `ok` on `/api/health`; ~20 s from trigger to recommendation, ~20 s from approval to finished (includes the 180 sim-s verify window at 20x). Zero exceptions in the server log.
 - One run each — anecdotes, not results; the eval suite (11) measures the effect with seeds and CIs.
 - **Bug caught by this test:** per-incident spend summed every `INC-001` ever recorded in the ledger (earlier dry runs) — 51k tokens reported for a 10.9k-token incident. Fixed by scoping to the run label; regression test `test_incident_spend_ignores_older_runs_with_the_same_incident_id`.
+
+### 14.1e Phase 4 live UI session (2026-09-28, browser-driven, `SIM_SPEED=10`, throwaway bank)
+
+Seven incidents triggered and approved through the UI (Playwright); scored by `backend/eval/metrics.py`:
+
+| Incident | Class | Seen | Memory | Top match | First recommendation | Attempts | MTTR (sim) | Tool calls | Tokens | Cost |
+|---|---|---|---|---|---|---|---|---|---|---|
+| INC-001 | config regression | 1st | ON | — | correct | 1 | 422 s | 10 | 11,119 | $0.0104 |
+| INC-002 | config regression | 2nd | ON | same class | correct (human overrode with the trap on purpose) | 2 | 694 s | 19 | 24,688 | $0.0184 |
+| INC-003 | network failure | 1st | ON | other class | correct | 1 | 300 s | 9 | 13,971 | $0.0109 |
+| INC-004 | sensor drift | 1st | ON | — | correct | 1 | 481 s | 10 | 11,213 | $0.0105 |
+| INC-005 | resource exhaustion | 1st | ON | other class | **false replay** (ROLLBACK_CONFIG) | 2 | 961 s | 20 | 33,386 | $0.0287 |
+| INC-006 | network failure | 2nd | ON | same class | correct | 1 | 303 s | 10 | 15,942 | $0.0130 |
+| INC-007 | resource exhaustion | 2nd | OFF | — | correct | 1 | 454 s | 9 | 8,607 | $0.0085 |
+
+Total $0.1003 for 118,926 tokens. Anecdotes, not results (n = 7, one seed, one run each).
+
+**Findings the eval suite must measure (not tuned here):**
+- **Memory-driven false replay (INC-005).** M5's event log still held INC-002's config deploy from ~64 sim-min earlier; the investigation reported it as "what changed", the memory query built from that evidence matched config-regression episodes at reranker 0.98 / 0.76 ("strong"), and the agent recommended ROLLBACK_CONFIG at 0.98 confidence. It had no effect; the lesson was written and attempt 2 found the memory exhaustion (CLEAR_CACHE). Cross-class "strong" matches also appeared for INC-003 (network failure → INC-001 config regression at reranker 0.47) and for a later config regression (INC-008 → INC-005, the misdiagnosed episode, ranked #1), where the agent still chose correctly.
+- **Runbook contamination.** After INC-005, Hindsight's Incident Patterns model listed ROLLBACK_CONFIG as an ineffective fix for the *control-loop* class — the lesson from a misdiagnosed incident was attributed to the class it was mistaken for.
+- Candidate mitigations for Phase 5, each to be judged by `false_replay`, `top_match_same_class` and accuracy with CIs: require the matched episode's decisive evidence to hold now (e.g. deploy timing relative to onset) before citing it; an absolute reranker floor for "strong"; lessons keyed to the diagnosed-and-verified class only.
 
 ### 14.2 Still to be measured
 
