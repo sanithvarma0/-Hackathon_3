@@ -1,5 +1,7 @@
-# MemoryOps — Build Specification v1.1
+# MemoryOps — Build Specification v1.2
 
+> **v1.2 changes (from v1.1, after reviewing reference repos — see TECH_STACK.md "Reference Repositories"):** "Incident Patterns" mental model promoted from stretch to core (Phase 3), configured from Vectorize's own ops bank template; episode record gains an `INVESTIGATION PATH` section (what evidence was decisive) to power `recall_hints`; Groq failure handling made concrete (`tool_use_failed` salvage, `include_reasoning: false`, fallback model verified at spike time); `simulate.py` runs each mode on its own throwaway bank and reports investigation efficiency; added a differentiation note against the official Hindsight cookbook demos.
+>
 > **v1.1 changes (from v1.0):** grounded all Hindsight calls in the real `hindsight-client` v0.10 SDK; added a Phase 0.5 spike; added a simulated clock so MTTR is measured, not invented; added a `verify` step (without it a trap fix looks like success); added a second memory touchpoint (`recall_hints`) so memory makes the agent *faster*, not just more accurate; removed the LLM-callable memory tool (it leaked memory into Memory-OFF runs); defined Memory-OFF semantics, demo reset, bank switching, SSE replay, Hindsight outage handling, full action/effect matrix, custom-builder classification rules, and a submission checklist. All headline numbers are now **targets to be replaced with measured values** (Section 14).
 
 ---
@@ -15,6 +17,8 @@
 **This is NOT a chatbot.** The judge interacts with a simulated production environment (buttons, sliders, dashboards). The agent runs autonomously in response to environmental events. The judge's "test" is: trigger an incident → watch the agent investigate → approve an action → trigger the same class again → watch it be faster.
 
 **Fit to the problem statement:** "Incident Response Agent" (Engineering & DevOps category), applied to manufacturing / OT. Memory is the product: the same agent with memory OFF is measurably worse, live, on stage.
+
+**Differentiation (Innovation = 30%).** Judges from Vectorize will know the official cookbook demos — ClaimsIQ (claims triage, "confused rookie → seasoned expert") and CableConnect (CSR copilot that learns from rejections). Both learn from a **human telling the agent it was wrong**. MemoryOps learns from **the environment's delayed consequences**: nobody tells the agent RESTART was wrong — the machine re-degrades 90 seconds later, the agent notices, and that becomes memory. Plus: judges inject incidents themselves into a live simulator (not a fixed scenario queue), the agent generalizes a signature across *different machines and wording*, and improvement is measured in an operational KPI (MTTR), not just "right/wrong". Say this explicitly in the README and demo.
 
 ---
 
@@ -34,9 +38,11 @@
 
 **Explicitly rejected** (do not add): multi-agent orchestration, MCP/A2A/ACP, DeepAgents, Mem0/Zep/Cognee, any second memory, any vector DB, semantic layer, WrenAI/GenBI, free-text incident input, `hindsight-langgraph` prebuilt nodes (they assume `MessagesState`; our state is custom).
 
-**Reference implementations:**
-- FastAPI + LangGraph + SSE pattern: https://github.com/JoshuaC215/agent-service-toolkit
-- Hindsight Python client: https://hindsight.vectorize.io (SDKs → Python; API → Retain / Recall / Memory Banks / Mental Models)
+**Reference implementations** (full list and what we borrow from each: TECH_STACK.md → "Reference Repositories"):
+- Hindsight Python client + API docs: https://github.com/vectorize-io/hindsight (`hindsight-clients/python`, `hindsight-docs`)
+- Closest Hindsight app patterns: `vectorize-io/hindsight-cookbook` → `applications/cable-co` (hindsight-client + Cloud + FastAPI, retain-on-failure + retain-at-end, reset by delete/recreate bank, mental models) and `applications/claims-iq` (memory-mode comparison, ground-truth validation)
+- Incident bank config: `vectorize-io/self-driving-agents` → `engineering/ops/bank-template.json`
+- FastAPI + LangGraph interrupt/resume + streaming: `JoshuaC215/agent-service-toolkit` (`src/service/service.py`)
 
 ---
 
@@ -69,9 +75,9 @@
 │                   │HINDSIGHT │ │  GROQ    │ │ LANGFUSE │     │
 │                   │retain    │ │gpt-oss-  │ │ traces   │     │
 │                   │recall    │ │120b →    │ │          │     │
-│                   │(mental   │ │qwen3-32b │ │          │     │
-│                   │ model*)  │ └──────────┘ └──────────┘     │
-│                   └──────────┘                  * stretch    │
+│                   │mental    │ │qwen3-32b │ │          │     │
+│                   │ model    │ └──────────┘ └──────────┘     │
+│                   └──────────┘                               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -315,12 +321,17 @@ client.create_bank(
     name="MemoryOps incident memory",
     mission="I am a production incident responder for a 5-machine factory. "
             "I learn from every incident resolution to diagnose faster and more accurately.",
-    retain_mission="Focus on incident symptoms, root cause, which remediation actions "
-                   "worked or failed and why, and time to recovery. Ignore UI chatter.",
-    observations_mission="Consolidate durable lessons about which fixes work or fail for "
-                         "each kind of incident signature.",
+    # adapted from self-driving-agents engineering/ops/bank-template.json
+    retain_mission="Extract incident symptoms, the evidence that identified the root cause, "
+                   "which remediation actions worked or failed and why, and time to recovery.",
+    observations_mission="Observations are stable facts about recurring incident classes: their "
+                         "signatures, the fix that works, fixes that only give temporary relief, "
+                         "and which evidence identifies them fastest. Ignore one-off noise such as "
+                         "exact percentages, timestamps and machine IDs.",
 )
 ```
+
+Then ensure the **Incident Patterns** mental model exists (6.5).
 
 ### 6.2 The Episode Record (heart of the project)
 
@@ -341,6 +352,10 @@ DIAGNOSIS: {diagnosis}, confidence {conf}.
 ACTIONS ATTEMPTED:
 1. {action_1} → {effect_1} ({recovery_pct_1}%{, re-degraded after Xs})
 2. {action_2} → {effect_2} ...
+
+INVESTIGATION PATH: {tool_1}({args}) → {finding}; {tool_2}(...) → {finding} ...
+DECISIVE EVIDENCE: {e.g. "recent events showed config v2.15.0 deployed 12 min before
+onset"} ({n} tool calls; {n_useful} were decisive).
 
 RESOLUTION: final action {final_action}, MTTR {mttr} sim-minutes.
 OUTCOME: {successful|escalated}.
@@ -374,7 +389,7 @@ client.retain(
 
 | # | Node | When | Query built from | What it changes |
 |---|---|---|---|---|
-| 1 | `recall_hints` | before investigation | the alert only (machine type, symptom shape) | tells `investigate` which signals mattered in similar past incidents → **fewer tool calls** (speed) |
+| 1 | `recall_hints` | before investigation | the alert only (machine type, symptom shape) + the **Incident Patterns** mental model | tells `investigate` which evidence was decisive in similar past incidents (from `INVESTIGATION PATH` / `DECISIVE EVIDENCE`) → **fewer tool calls** (speed) |
 | 2 | `search_memory` | after investigation | the evidence bundle | matched past episodes + known-bad actions → **correct first action, higher confidence** (accuracy) |
 
 Both are deterministic code (no LLM decides whether to use memory). Both are skipped when memory is OFF.
@@ -413,9 +428,29 @@ The toggle's value is sent with each incident trigger (`memory_enabled`) and sto
 - **OFF:** `recall_hints` and `search_memory` return empty and emit `memory_skipped`. The LLM has no memory tool, so nothing can leak in. Everything else is identical.
 - **Retain still happens when OFF** — the agent keeps accumulating experience; only its *use* of memory is disabled. The Learning tab splits series by `memory_enabled` so ON vs OFF is directly comparable.
 
-### 6.5 Mental Model — "Learned Runbook" (Phase 5 stretch)
+### 6.5 Mental Model — "Incident Patterns" (core, Phase 3)
 
-`create_mental_model(bank_id, name="Incident runbook", source_query="For each kind of incident signature, which remediation works, which fails, and why?")`. Hindsight rebuilds it in the background as memories accumulate. Shown as a read-only "Runbook the agent wrote itself" panel. Not on the critical path.
+Hindsight's highest knowledge layer: a standing answer that Hindsight rewrites in the background as memories consolidate. Created once per bank at startup (idempotent: skip if a model with this `id` exists), config adapted from Vectorize's ops bank template:
+
+```python
+client.create_mental_model(
+    bank_id=bank_id,
+    id="incident-patterns",
+    name="Incident Patterns",
+    source_query="What incident classes recur on this factory floor? For each: its signature, "
+                 "the evidence that identifies it fastest, the fix that works, and fixes that "
+                 "only give temporary relief or no effect.",
+    max_tokens=4096,
+    trigger={"refresh_after_consolidation": True, "mode": "delta",
+             "exclude_mental_models": True, "fact_types": ["observation"]},
+)
+```
+
+Used in two places:
+- **UI:** "Runbook the agent wrote itself" panel (Memory Browser + incident panel), refreshed on `memory_written`. Nobody writes this runbook — it appears and improves as incidents happen. Strong visual proof for the "Use of Hindsight" criterion.
+- **Agent:** `recall_hints` reads it (a cheap DB read, no LLM) and injects it into the investigate prompt. Skipped when memory is OFF.
+
+It refreshes asynchronously after consolidation, so it lags the latest incident by seconds to a minute. Nothing on the demo's critical path waits for it — `search_memory`'s raw-fact matches carry the immediate "cites INC-001" beat.
 
 ---
 
@@ -511,9 +546,10 @@ class Recommendation(BaseModel):
 ### 7.5 LLM Client (llm.py)
 
 - `openai` SDK pointed at Groq (`base_url="https://api.groq.com/openai/v1"`), imported via `from langfuse.openai import OpenAI` so every call is traced automatically.
-- Primary `openai/gpt-oss-120b`; retry ×2 with backoff (1 s, 2 s); then fallback `qwen/qwen3-32b` with the same retries; on total failure → `ESCALATE_HUMAN` recommendation with reasoning "LLM unavailable" (graceful degradation, never crash).
-- **Malformed tool calls** (organizers explicitly warned): catch Groq's tool-call failure errors and JSON-parse failures of arguments → retry once, then inject a corrective system message ("Your last tool call was malformed: … Call one of: …"). Unknown tool names are treated the same way.
-- **Qwen3 reasoning text:** strip/disable `<think>` content before parsing (Groq exposes a reasoning-format request parameter — confirm exact name/values in `spike_groq.py`).
+- Primary `openai/gpt-oss-120b`; retry ×2 with backoff (1 s, 2 s); then fallback model (`LLM_FALLBACK_MODEL`, default `qwen/qwen3-32b`) with the same retries; a **total time budget per call** (default 30 s) caps retries; on total failure → `ESCALATE_HUMAN` recommendation with reasoning "LLM unavailable" (graceful degradation, never crash).
+- **Fallback model availability:** Groq's catalogue changes; `spike_groq.py` lists `GET /models` and confirms the fallback is served (candidates seen in reference code: `qwen/qwen3-32b`, `qwen/qwen3.6-35b-a3b`, `openai/gpt-oss-20b`). It's an env var, so swapping is a config change.
+- **Malformed tool calls** (organizers explicitly warned). Groq rejects them with **HTTP 400, `error.code == "tool_use_failed"`, and the raw model output in `error.failed_generation`** (same handling as Hindsight's own Groq provider). Order: (1) try to salvage — parse `failed_generation` as `{name, arguments}` and, if it validates against a known tool, use it; (2) else retry once; (3) else inject a corrective system message ("Your last tool call was malformed: … Call one of: …"). JSON-parse failures of `arguments` and unknown tool names go through the same path.
+- **Reasoning text:** send `extra_body={"include_reasoning": False}` for reasoning models, and still strip any `<think>…</think>` block from content before parsing (belt and braces).
 - Structured output for `decide`: request JSON, validate with `Recommendation`; on validation failure → one corrective retry (guardrail 1/3).
 
 ---
@@ -545,6 +581,7 @@ POST /api/incident/{id}/ignore        # cascade; stays awaiting_action
 GET  /api/incidents                   # history for Memory Browser
 GET  /api/incidents/{id}              # episode text(s) + stored trace events
 GET  /api/metrics                     # learning-curve series
+GET  /api/memory/runbook              # current Incident Patterns mental model content
 POST /api/admin/reset                 # {bank: "live"|"seeded", wipe_memory: bool}
 ```
 
@@ -572,6 +609,7 @@ re_degradation       {incident_id, message}                       # trap fix wea
 lesson_written       {document_id, text}
 outcome              {resolved: bool, escalated: bool, mttr_sim_s}
 memory_written       {document_id, episode_summary}
+runbook_updated      {content, updated_at}                        # mental model changed
 metrics_updated      {series}
 error                {code, message}                              # never crash
 ```
@@ -612,6 +650,7 @@ Machine (M1–M5) · config_changed [Yes/No] · minutes_before slider · through
 metrics(incident_id TEXT, diagnosis TEXT, true_type TEXT, memory_enabled INTEGER,
         mttr_sim_s INTEGER, agent_time_real_s REAL, human_wait_sim_s INTEGER,
         tool_calls INTEGER, attempts INTEGER,
+        investigation_efficiency REAL,      -- decisive tool calls / total tool calls
         llm_confidence REAL, calibrated_confidence REAL,
         memory_hit INTEGER,                 -- any match ≥ threshold
         recommendation_correct INTEGER,     -- agent's FIRST recommendation == correct fix
@@ -621,7 +660,7 @@ metrics(incident_id TEXT, diagnosis TEXT, true_type TEXT, memory_enabled INTEGER
 
 `recommendation_correct` measures the agent; `first_time_right` depends on what the judge clicked — both are tracked, charts default to the agent-side metric.
 
-**Acceptance test that matters most:** `scripts/simulate.py` runs ≥5 incidents of a class on random machines in `auto_approve` mode, with memory ON and again with memory OFF on a fresh bank. With memory ON, MTTR and tool calls must trend down and confidence up; with memory OFF they must stay flat. If not, the demo is broken — fix before building UI polish.
+**Acceptance test that matters most:** `scripts/simulate.py` runs ≥5 incidents of a class on random machines in `auto_approve` mode, with memory ON and again with memory OFF. Each mode runs on its **own throwaway bank** (`memoryops-sim-<run_id>-<mode>`, deleted afterwards) so runs never contaminate each other or the demo banks (pattern from the cookbook's deliveryman benchmark). Output: a JSON results file + a markdown summary table (per incident: MTTR, tool calls, efficiency, confidence, correct?). With memory ON, MTTR and tool calls must trend down and confidence up; with memory OFF they must stay flat. If not, the demo is broken — fix before building UI polish.
 
 ---
 
@@ -646,17 +685,17 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 
 **Phase 0.5 — Spikes (first 1–2 hours of Phase 2 work, do before building nodes).**
 - `spike_hindsight.py`: create bank, retain 3 synthetic episodes (2 config regression with different wording, 1 sensor drift), recall with a paraphrased query. ✅ Record: retain latency; recall-immediately-after-retain works; score distributions (`semantic`, `reranker`, `final`) for true vs false matches → **set `MEMORY_MATCH_THRESHOLD`**; observation lag.
-- `spike_groq.py`: tool-calling round trip on both models; provoke a malformed tool call; qwen3 reasoning output. ✅ Record: error shapes, reasoning-format parameter, typical latency.
+- `spike_groq.py`: list available models; tool-calling round trip on primary + fallback; provoke a malformed tool call and confirm the `tool_use_failed` / `failed_generation` shape; confirm `include_reasoning: false` suppresses reasoning. ✅ Record: fallback model choice, error shapes, typical latency.
 
 **Phase 1 — Simulator.** ✅ `pytest tests/test_simulator.py`: each of 4 types triggers on random machines; metrics degrade per taxonomy; every cell of the effects matrix (5.5) produces the specified effect incl. re-degradation timing; IGNORE cascades; custom builder maps to the right class incl. `ambiguous`; sim clock math; SQLite persists everything.
 
 **Phase 2 — Agent.** ✅ `demo_dryrun.py` headless: config regression → real tool calls → valid recommendation → action executes → verify → episode retained (visible in Hindsight Cloud UI) → reworded same-type incident on another machine → recall returns prior episode above threshold → fewer tool calls, higher confidence, reasoning cites INC-ID → trap-fix loop works (restart → re-degrade → lesson retained → re-investigate → rollback) → memory OFF run shows no memory events.
 
-**Phase 3 — API + SSE.** ✅ All endpoints work; one global SSE stream carries the full event contract; reconnect replays via Last-Event-ID; human-in-the-loop resume via action endpoint; guardrail violations and dependency failures emit `error` events instead of crashing.
+**Phase 3 — API + SSE + Mental Model.** ✅ Incident Patterns mental model created at startup and readable after a few incidents; all endpoints work; one global SSE stream carries the full event contract; reconnect replays via Last-Event-ID; human-in-the-loop resume via action endpoint; guardrail violations and dependency failures emit `error` events instead of crashing.
 
 **Phase 4 — Frontend.** ✅ Full demo script (Section 12) runs end-to-end in the browser, including memory toggle, re-degradation animation, and reset.
 
-**Phase 5 — Measure & Polish.** ✅ `simulate.py` acceptance test (Section 11) passes; real numbers replace placeholders in Sections 1, 12 and README; Learning charts correct; Memory Browser shows real retained content; Langfuse traces present; seeded bank loaded; README with architecture diagram, how to run, and "How Hindsight memory is used" (required deliverable). Stretch: Learned Runbook mental model (6.5); remaining two incident types polished.
+**Phase 5 — Measure & Polish.** ✅ `simulate.py` acceptance test (Section 11) passes; real numbers replace placeholders in Sections 1, 12 and README; Learning charts correct; Memory Browser shows real retained content; Langfuse traces present; seeded bank loaded; README with architecture diagram, how to run, and "How Hindsight memory is used" (required deliverable). Stretch: remaining two incident types polished; memory-mode comparison in `simulate.py` (recall only vs recall + mental model).
 
 **Incremental order inside phases:** config regression end-to-end first (sim → agent → API → UI), then sensor drift, then network failure and resource exhaustion, then custom builder, then IGNORE cascade.
 
