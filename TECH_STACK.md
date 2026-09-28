@@ -1,7 +1,9 @@
-# 🔒 TECH STACK — FROZEN (v1.3)
+# 🔒 TECH STACK — FROZEN (v1.4)
 
 All decisions are locked. This is the definitive reference for the rest of the hackathon. BUILD_PLAN.md is the implementation spec; this file is the "what and why".
 
+> **v1.4 changes:** production-grade tooling — GitHub Actions CI (ruff, mypy, pytest, frontend build; no secrets), `mypy`, `make` targets, docker compose, matplotlib for eval charts, ADRs in `docs/adr/`; environment adapter boundary; evaluation suite and seeded history added to the decision log. No new runtime services.
+>
 > **v1.3 changes:** Phase 0.5 spikes run against the real services: fallback model is now `qwen/qwen3.8-27b` (Groq retired `qwen/qwen3-32b`); memory matches are gated on Hindsight's reranker score relative to the top result (semantic cosine measured as non-discriminative). Results: BUILD_PLAN.md Section 14.
 >
 > **v1.2 changes:** reviewed the suggested reference repositories (new section below); "Incident Patterns" mental model is now core; Groq error/reasoning handling pinned to what Hindsight's own Groq provider does; no stack additions — every reviewed framework/template was either a pattern source or rejected.
@@ -29,12 +31,16 @@ All decisions are locked. This is the definitive reference for the rest of the h
 | 13 | **Backend** | FastAPI | Python 3.11+, Pydantic v2, `pydantic-settings` |
 | 14 | **Frontend** | Next.js (App Router) + Tailwind + shadcn/ui + Recharts | Ops dashboard, not a chat |
 | 15 | **Guardrails** | 6 custom rules | Pydantic validation, tool-call cap, action whitelist, dependency retry/fallback, simulator state validation, memory match rule (reranker-relative) |
-| 16 | **Evaluation** | Custom tracker + headless simulation script | MTTR (sim time), tool calls, confidence, memory hit rate, recommendation accuracy — plotted live |
-| 17 | **Tooling** | `uv` (Python deps + lockfile), `pytest`, `ruff` · `npm` for frontend | Versions pinned by lockfiles at Phase 0 |
+| 16 | **Evaluation** | Headless eval suite (`make eval`) + committed report | Paired memory ON/OFF, 3 seeds, bootstrap 95% CIs; accuracy/MTTR/tool calls by exposure, transfer, discrimination, recall@1, Brier calibration, cost — BUILD_PLAN Section 11 |
+| 17 | **Tooling** | `uv` (Python deps + lockfile), `pytest`, `ruff`, `mypy` · `npm` for frontend · `make` · GitHub Actions CI | Versions pinned by lockfiles; CI runs without secrets |
+| 18 | **Environment boundary** | `EnvironmentAdapter` Protocol (`backend/adapters/base.py`) | Simulator implements it; `datadog.py` stub documents the production mapping |
+| 19 | **Run / deploy** | `make demo` · `docker compose up` | Local only — no cloud deployment |
 
 ### Python dependencies (pin exact versions in the lockfile at Phase 0)
 
-`fastapi`, `uvicorn[standard]`, `sse-starlette`, `langgraph`, `openai`, `langfuse`, `hindsight-client`, `pydantic`, `pydantic-settings`, `httpx`, `pytest`, `ruff`
+Runtime: `fastapi`, `uvicorn[standard]`, `sse-starlette`, `langgraph`, `openai`, `langfuse`, `hindsight-client`, `pydantic`, `pydantic-settings`, `httpx`
+
+Dev / eval: `pytest`, `pytest-asyncio`, `ruff`, `mypy`, `matplotlib` (eval charts)
 
 ### Frontend dependencies
 
@@ -142,6 +148,11 @@ Keep this — you'll need it for the *"Explanation of how Hindsight memory is us
 | Langfuse | Open-source observability; traces prove the agent's reasoning is real, not hardcoded |
 | Ops dashboard, not chat | The judge creates incidents in a simulator — this is a closed-loop system, not a chatbot |
 | One global SSE stream | Opened once at page load: no subscribe race, trivial reconnect with replay |
+| Environment adapter boundary | The agent sees six typed methods; the simulator is one implementation — the production answer to "how would this work on real infrastructure?" (ADR-0003) |
+| Measured evaluation suite | Every number we show comes from a committed, reproducible report; paired ON/OFF with CIs, not anecdotes |
+| Seeded history from simulator facts + LLM narrative | Realistic and internally consistent; kept out of eval banks so it can't inflate learning curves |
+
+Full reasoning for the key decisions lives in `docs/adr/` (BUILD_PLAN 17.3).
 
 ---
 
@@ -179,6 +190,6 @@ What each suggested repo gives us — borrow **patterns**, not code dependencies
 
 ## What's Deliberately NOT in the Stack
 
-Multi-agent orchestration · MCP/A2A/ACP protocols · DeepAgents harness · `hindsight-langgraph` prebuilt nodes · Mem0/Zep/Cognee/second memory · ChromaDB/FAISS · Semantic layer · WrenAI/GenBI · Free-text incident input · LLM-callable memory tool · Redis/queues · Docker (optional only, if time allows)
+Auth / login / multi-tenancy · Kubernetes / cloud deployment · real Datadog/K8s integrations · Multi-agent orchestration · MCP/A2A/ACP protocols · DeepAgents harness · `hindsight-langgraph` prebuilt nodes · Mem0/Zep/Cognee/second memory · ChromaDB/FAISS · Semantic layer · WrenAI/GenBI · Free-text incident input · LLM-callable memory tool · Redis/queues · Docker (optional only, if time allows)
 
 Every one of these was considered and rejected for a reason. If anyone (teammate, judge, well-meaning senior) asks "why didn't you use X?" — the decision log above is your answer.

@@ -1,5 +1,7 @@
-# MemoryOps — Build Specification v1.3
+# MemoryOps — Build Specification v1.4
 
+> **v1.4 changes (production-grade pass):** added the engineering principles that govern every claim (Section 1.1); the **environment adapter boundary** (5.9); a realistic **6-month seeded history** spec (6.6); Section 11 rewritten as a full **evaluation suite** (paired ON/OFF design, seeds, bootstrap CIs, transfer + discrimination + retrieval + calibration metrics, auto-generated report); **engineering quality** (tests, CI, mypy, ADRs, `make`, docker compose, designed error states — Section 17); **Q&A answers backed only by measured results** (Section 18); an explicit **priority stack and anti-scope list** (Section 19). Phases re-cut so evaluation and seeding are first-class (Section 13).
+>
 > **v1.3 changes (Phase 0.5 spikes run against the real services — Section 14):** Groq no longer serves `qwen/qwen3-32b` → fallback is `qwen/qwen3.8-27b`; semantic cosine does **not** separate true from false incident matches, so the 0.7 similarity threshold is replaced by a reranker-relative rule, the episode gains a generalized `SIGNATURE:` line, and recall queries are built from observed signals only; `tool_use_failed` payloads are usually refusal text, not salvageable tool calls; models may emit parallel tool calls and may silently coerce invalid arguments.
 >
 > **v1.2 changes (from v1.1, after reviewing reference repos — see TECH_STACK.md "Reference Repositories"):** "Incident Patterns" mental model promoted from stretch to core (Phase 3), configured from Vectorize's own ops bank template; episode record gains an `INVESTIGATION PATH` section (what evidence was decisive) to power `recall_hints`; Groq failure handling made concrete (`tool_use_failed` salvage, `include_reasoning: false`, fallback model verified at spike time); `simulate.py` runs each mode on its own throwaway bank and reports investigation efficiency; added a differentiation note against the official Hindsight cookbook demos.
@@ -14,13 +16,29 @@
 
 **The demo thesis:** the first incident of a class is slow and uncertain; later incidents of the same class — on a *different* machine, with *different* log wording — are fast, confident, and cite the earlier incident. Judges can trigger incidents themselves and verify the learning is real, not scripted.
 
-> Target shape (placeholder until measured): incident #1 → ~10 sim-min MTTR, ~0.6 confidence; incident #5 of the same class → ~3 sim-min MTTR, ~0.9 confidence. Replace with real numbers from Phase 5 simulation runs.
+> Target shape (placeholder until measured): incident #1 → ~10 sim-min MTTR, ~0.6 confidence; incident #5 of the same class → ~3 sim-min MTTR, ~0.9 confidence. Replaced with real numbers from the committed eval report (Section 11) — until then, no numbers are quoted anywhere.
 
 **This is NOT a chatbot.** The judge interacts with a simulated production environment (buttons, sliders, dashboards). The agent runs autonomously in response to environmental events. The judge's "test" is: trigger an incident → watch the agent investigate → approve an action → trigger the same class again → watch it be faster.
 
 **Fit to the problem statement:** "Incident Response Agent" (Engineering & DevOps category), applied to manufacturing / OT. Memory is the product: the same agent with memory OFF is measurably worse, live, on stage.
 
 **Differentiation (Innovation = 30%).** Judges from Vectorize will know the official cookbook demos — ClaimsIQ (claims triage, "confused rookie → seasoned expert") and CableConnect (CSR copilot that learns from rejections). Both learn from a **human telling the agent it was wrong**. MemoryOps learns from **the environment's delayed consequences**: nobody tells the agent RESTART was wrong — the machine re-degrades 90 seconds later, the agent notices, and that becomes memory. Plus: judges inject incidents themselves into a live simulator (not a fixed scenario queue), the agent generalizes a signature across *different machines and wording*, and improvement is measured in an operational KPI (MTTR), not just "right/wrong". Say this explicitly in the README and demo.
+
+### 1.1 Engineering Principles (apply to every phase)
+
+Judges see three surfaces — **the repo, the demo, the Q&A**. "Production-grade" means production-grade on those surfaces:
+
+| We invest in | We deliberately skip |
+|---|---|
+| Observability — Langfuse traces of every LLM + tool call, visible in the demo | Auth, login, multi-tenancy |
+| Evaluation — measured with a reproducible script, never claimed | Microservices, Kubernetes, message queues |
+| Error handling — graceful, and *visible* as designed UI states | Postgres / Redis (SQLite is enough) |
+| Tests + CI — green badge on the README | Real Datadog/K8s integrations (the adapter interface is enough) |
+| Realistic data — machines, logs, operators, 6-month history | More incident types, a second agent, a second memory |
+| Reproducibility — one command to run, one command to evaluate | Deployment beyond docker compose |
+| Documentation — README, ADRs, auto OpenAPI docs | |
+
+**The number rule:** every number that appears in the README, the demo, the article or the Q&A is produced by a script in this repo, and the report that produced it is committed. No estimated or aspirational numbers. Where something has not been measured, we say so.
 
 ---
 
@@ -93,9 +111,17 @@ The repo root **is** the project (no extra `memoryops/` folder).
 .
 ├── BUILD_PLAN.md               # this document
 ├── TECH_STACK.md               # frozen stack + decision log
-├── README.md                   # final deliverable (judges read this)
+├── README.md                   # final deliverable: diagram, eval table, CI badge
+├── Makefile                    # setup | dev | test | lint | typecheck | eval | seed | demo
+├── docker-compose.yml          # backend + frontend, one command
 ├── .env.example
 ├── pyproject.toml              # backend deps (pinned via uv.lock)
+├── .github/workflows/ci.yml    # ruff, mypy, pytest, frontend lint + build (no secrets)
+├── docs/
+│   ├── adr/                    # 6 Architecture Decision Records (Section 17.3)
+│   └── eval/                   # committed eval reports: REPORT.md, charts, results.json
+├── fixtures/
+│   └── seed_history.jsonl      # generated once, committed; seeding replays it (6.6)
 ├── backend/
 │   ├── main.py                 # FastAPI app, routes, SSE endpoint
 │   ├── config.py               # pydantic-settings: env vars, SIM_SPEED, thresholds
@@ -103,6 +129,10 @@ The repo root **is** the project (no extra `memoryops/` folder).
 │   ├── llm.py                  # Groq client (OpenAI SDK) + retry + fallback + Langfuse
 │   ├── guardrails.py           # the 6 guardrails
 │   ├── schemas.py              # Pydantic models: Recommendation, ActionResult, API payloads
+│   ├── adapters/
+│   │   ├── base.py             # EnvironmentAdapter Protocol — the agent's only view (5.9)
+│   │   ├── simulator.py        # implementation backed by the simulator
+│   │   └── datadog.py          # stub: raises NotImplementedError, documents the mapping
 │   ├── agent/
 │   │   ├── graph.py            # StateGraph definition + routing functions
 │   │   ├── state.py            # AgentState TypedDict
@@ -128,11 +158,21 @@ The repo root **is** the project (no extra `memoryops/` folder).
 │   │   ├── render.py           # episode/lesson → prose templates; query paraphraser
 │   │   └── outbox.py           # retry retains that failed (Hindsight outage)
 │   └── eval/
-│       └── metrics.py          # MTTR / confidence / hit-rate / tool-call tracker
+│       ├── metrics.py          # per-incident metrics tracker (live + eval)
+│       ├── battery.py          # scenario battery: variants × noise × seeds (11.2)
+│       ├── harness.py          # headless runner: fast-forward clock, auto-approve, resume
+│       ├── stats.py            # bootstrap CIs, paired differences, Brier score
+│       └── report.py           # REPORT.md + charts + results.json
 ├── tests/
-│   ├── test_simulator.py       # effects matrix, re-degradation, classifier
-│   ├── test_guardrails.py
-│   └── test_graph_routing.py   # routing with fake LLM + fake memory
+│   ├── test_simulator.py       # effects matrix, re-degradation, classifier, clock
+│   ├── test_adapter.py         # simulator adapter satisfies the Protocol contract
+│   ├── test_guardrails.py      # whitelist, schema, tool-call cap, arg validation
+│   ├── test_schemas.py         # Pydantic models, API payloads
+│   ├── test_memory_render.py   # episode/lesson/query rendering, match rule
+│   ├── test_llm.py             # retry, fallback, tool_use_failed handling (fake client)
+│   ├── test_graph_routing.py   # routing with fake LLM + fake memory
+│   ├── test_eval_stats.py      # bootstrap / Brier on known inputs
+│   └── test_health.py
 ├── frontend/
 │   ├── app/
 │   │   ├── page.tsx            # Dashboard + live incident panel
@@ -145,8 +185,10 @@ The repo root **is** the project (no extra `memoryops/` folder).
 └── scripts/
     ├── spike_hindsight.py      # Phase 0.5: measure recall scores + latency
     ├── spike_groq.py           # Phase 0.5: tool-calling + error shapes on both models
-    ├── simulate.py             # headless N-incident runs (auto-approve) → metrics
-    ├── seed_history.py         # 6-month history into the *seeded* bank
+    ├── spike_recall_design.py  # Phase 0.5: record/query design vs match separation
+    ├── run_eval.py             # `make eval`: evaluation suite → docs/eval/ (Section 11)
+    ├── generate_history.py     # one-off: build fixtures/seed_history.jsonl (6.6)
+    ├── seed_history.py         # `make seed`: replay the fixture into the seeded bank
     ├── reset_demo.py           # wipe SQLite + recreate live bank
     └── demo_dryrun.py          # scripted end-to-end run of Section 12
 ```
@@ -286,7 +328,7 @@ Classification (first match wins; the agent never sees the result):
 4. `memory_trend == climbing` → `resource_exhaustion`
 5. otherwise → `ambiguous`: no fix works; the only correct action is `ESCALATE_HUMAN` (tests the agent's willingness to say "I don't know").
 
-### 5.8 Simulator API (internal, called by FastAPI + agent tools)
+### 5.8 Simulator API (control plane for FastAPI + eval harness; read/act side exposed to the agent only via the adapter, 5.9)
 
 ```python
 class Simulator:
@@ -304,6 +346,28 @@ class Simulator:
 
 `execute_action` returns `{effect, recovery_pct, re_degrade_after_sim_s | None}`. Partial effects recover the machine, then the engine re-degrades it after the delay.
 
+### 5.9 Environment Adapter Boundary (the agent never imports the simulator)
+
+The agent sees the world only through this Protocol. The simulator implements it; a real deployment implements it with observability/ops clients. The agent core, memory loop and learning are unchanged.
+
+```python
+class EnvironmentAdapter(Protocol):
+    # read side — backs the 4 LLM tools (7.3)
+    def get_machine_metrics(self, machine_id: str) -> MachineMetrics: ...
+    def get_metric_history(self, machine_id: str, metric: str, window_hours: int) -> list[MetricPoint]: ...
+    def get_recent_events(self, machine_id: str, window_minutes: int) -> list[Event]: ...
+    def get_error_logs(self, machine_id: str, window_minutes: int) -> list[str]: ...
+    # write side — used only by the act node, after human approval
+    def execute_action(self, incident_id: str, action: Action) -> ActionResult: ...
+    # used by verify
+    def observe_recovery(self, incident_id: str, window_sim_s: int) -> RecoveryObservation: ...
+```
+
+- **Not in the adapter:** `trigger_incident`, `ignore`, `tick`, `reset` — they are the simulator's control plane (a real factory has no "trigger incident" API). FastAPI and the eval harness call them on the simulator directly.
+- All return types are Pydantic models in `backend/schemas.py`, so the contract is typed and tested (`tests/test_adapter.py`).
+- `backend/adapters/datadog.py` is a stub whose docstring maps each method to the real source (metrics → Datadog metrics query, events → deploy/change events, logs → log search, actions → runbook automation / PagerDuty). Every method raises `NotImplementedError`. Visible intent, zero risk.
+- Q&A line: *"The agent only sees six typed methods. This demo implements them with a deterministic simulator; in production you implement them with Datadog, PagerDuty and your orchestrator. Nothing else changes."*
+
 ---
 
 ## 6. Hindsight Memory Layer (Phase 2)
@@ -313,7 +377,8 @@ class Simulator:
 | Bank ID | Purpose |
 |---|---|
 | `memoryops-live` | Starts empty. Used for the main demo so the first incident is genuinely cold. |
-| `memoryops-seeded` | Pre-loaded by `seed_history.py` with ~6 months of synthetic history (~25 episodes). Used for the "recalls something from weeks ago" beat. |
+| `memoryops-seeded` | Pre-loaded by `seed_history.py` with 6 months of realistic history (~48 episodes, 6.6). Behind the **[LOAD 6-MONTH OPS HISTORY]** button and the "recalls something from weeks ago" beat. |
+| `memoryops-eval-<run>-<cond>-<seed>` | Throwaway banks created and deleted by `run_eval.py` (Section 11). Never share state with the demo banks. |
 
 Active bank is selected via `POST /api/admin/reset`. Bank creation (idempotent, at startup):
 
@@ -424,7 +489,7 @@ resp = client.recall(
 - Group raw facts (`world`/`experience`) by `metadata.incident_id` → one **incident match** per past incident, with `rerank = max scores.reranker` and `similarity = max scores.semantic` over its facts, and `rank` = position of its first fact.
 - **Match rule:** `rerank ≥ MEMORY_MATCH_REL_RERANK × top_rerank` (0.15) **and** `rerank ≥ MEMORY_MATCH_MIN_RERANK` (0.05, lets recall abstain when nothing is relevant). Measured: weakest true match ≥ 0.245 × top, strongest false match ≤ 0.056 × top.
 - **UI shows** rank (#1, #2…) and the reranker-based strength; the `decide` LLM still makes the final call on fit (prompt rule 3), so a borderline match is visible but can be rejected with a reason.
-- Both values are re-checked by `simulate.py` on the full incident set in Phase 5.
+- Both values are re-checked by the eval suite's retrieval metrics (11.3) on the full battery.
 - `observation` results are shown separately as **"Learned patterns"** (consolidated beliefs like "restart only gives temporary relief for config regressions"). Consolidation runs in the background after retain, so observations may lag a few seconds; the demo does not depend on them being instant.
 
 Output to state: `memory_results = [{incident_id, rank, rerank, similarity, summary, final_action, outcome}]`, `learned_patterns = [str]`.
@@ -459,6 +524,21 @@ Used in two places:
 - **Agent:** `recall_hints` reads it (a cheap DB read, no LLM) and injects it into the investigate prompt. Skipped when memory is OFF.
 
 It refreshes asynchronously after consolidation, so it lags the latest incident by seconds to a minute. Nothing on the demo's critical path waits for it — `search_memory`'s raw-fact matches carry the immediate "cites INC-001" beat.
+
+### 6.6 Seeded 6-Month History (makes the world feel lived-in)
+
+Goal: a judge clicks **[LOAD 6-MONTH OPS HISTORY]** and the agent is instantly "experienced" — and the Learning tab shows a long, realistic curve.
+
+**Generation (one-off, `scripts/generate_history.py` → `fixtures/seed_history.jsonl`, committed):**
+- **Facts come from the simulator**, not the LLM: incident class, machine, signature parameters, attempted actions and their effects are sampled with a fixed seed from the same templates and effects matrix the live simulator uses. So every seeded episode is consistent with how the world actually behaves.
+- **Narrative comes from the LLM**: operator notes, shift handover remarks, escalation notes, vendor tickets — rendered into the same episode format as live incidents (6.2), plus a `RESPONDED BY:` line.
+- ~48 incidents over 6 months, weighted to shift patterns (more on night shift and after planned maintenance windows), weekends quieter.
+- Fictional operator roster (e.g. "Priya Sharma, on-call", "Marcus Chen, maintenance lead", "Aisha Rahman, controls engineer") — clearly fictional, no real people.
+- Includes: 2–3 **vendor escalations** (e.g. "escalated to Fanuc field service"), a few `ESCALATE_HUMAN` outcomes, and **2–3 deliberate contradictions** — e.g. an early episode where `RESTART_MACHINE` "resolved" resource exhaustion (the re-degradation happened after a shift change and was logged as a new incident), later episodes showing restart failing. These give Hindsight's observation consolidation something real to reconcile; the eval reports whether the Incident Patterns mental model ends up with the correct belief.
+
+**Seeding (`make seed` → `scripts/seed_history.py`):** deletes and recreates `memoryops-seeded`, retains each fixture row with its historical `timestamp` (so temporal recall works: "6 weeks ago"), and writes matching rows into SQLite so the Memory Browser and Learning tab show the history. ~48 × ~3.5 s ≈ 3 min, so it runs **before** the demo; the UI button just switches the active bank (it never seeds live).
+
+**Isolation:** the seeded bank is never used by the eval suite's cold-start conditions, so history cannot leak into learning-curve measurements.
 
 ---
 
@@ -503,7 +583,7 @@ START
 - `investigate`: LLM tool-calling loop over the 4 tools. Max **10 tool calls** (guardrail 2). Every call and result streams as SSE. Ends with an `investigation_summary`. On retry it also sees the previous attempts ("RESTART_MACHINE → recovered to 70%, re-degraded after 90s").
 - `search_memory`: deterministic recall (6.3).
 - `decide`: LLM → `Recommendation` (Pydantic, whitelist). Must cite matched incident IDs when memory informed the decision.
-- `act`: **no LLM**. `interrupt({"recommendation": ...})` pauses the graph; state lives in `InMemorySaver` keyed by `thread_id=incident_id`. `POST /api/incident/{id}/action` resumes with `Command(resume={"action": ...})`. The judge may pick *any* whitelisted action (this is the sabotage beat). In `auto_approve` mode (simulation scripts), the recommended action is applied without interrupting.
+- `act`: **no LLM**. `interrupt({"recommendation": ...})` pauses the graph; state lives in `InMemorySaver` keyed by `thread_id=incident_id`. `POST /api/incident/{id}/action` resumes with `Command(resume={"action": ...})`. The judge may pick *any* whitelisted action (this is the sabotage beat). In `auto_approve` mode (eval harness), the recommended action is applied without interrupting.
 - `verify`: **no LLM**. Polls metrics over the verify window; declares `full_recovery` only if recovery holds for the whole window. This is what catches trap fixes.
 - `record_lesson`: renders + retains a partial lesson (6.2), then loops.
 - `learn`: renders + retains the episode, writes metrics, closes the incident, emits `memory_written` and `metrics_updated`.
@@ -523,6 +603,8 @@ get_recent_events(machine_id: str, window_minutes: int) -> list[dict]
 get_error_logs(machine_id: str, window_minutes: int) -> list[str]
     # Controller/PLC log lines. Use to see the error pattern.
 ```
+
+Each tool is a thin wrapper over the matching `EnvironmentAdapter` method (5.9): arguments are validated with Pydantic before the call, results are serialized compactly for the LLM.
 
 There is **no memory tool for the LLM** (v1.0 had `search_incident_history`). Memory access is deterministic in `recall_hints` / `search_memory`, which keeps the ON/OFF comparison clean and the memory calls visible in the trace.
 
@@ -593,6 +675,7 @@ GET  /api/incidents                   # history for Memory Browser
 GET  /api/incidents/{id}              # episode text(s) + stored trace events
 GET  /api/metrics                     # learning-curve series
 GET  /api/memory/runbook              # current Incident Patterns mental model content
+GET  /api/eval/latest                 # latest committed eval results.json (Learning tab)
 POST /api/admin/reset                 # {bank: "live"|"seeded", wipe_memory: bool}
 ```
 
@@ -629,6 +712,8 @@ error                {code, message}                              # never crash
 
 ## 10. Frontend (Phase 4)
 
+> **UI direction:** the team's visual direction is being finalized and will be folded in here before Phase 4. The layout below is the functional baseline (what must exist), not the visual design.
+
 Next.js App Router + Tailwind + shadcn/ui + Recharts. **Dark theme ops aesthetic.**
 
 ### 10.1 Layout
@@ -655,23 +740,76 @@ Machine (M1–M5) · config_changed [Yes/No] · minutes_before slider · through
 
 ---
 
-## 11. Evaluation Tracker (eval/metrics.py)
+## 11. Evaluation Suite (the differentiator)
+
+Most teams will *claim* their agent improves. We **measure** it, with a headless, reproducible suite whose report is committed to the repo. One artifact that serves four purposes: proof for judges, data for the Learning tab, content for the article, and the agent's regression test before every demo (`make eval`).
+
+### 11.1 Per-incident metrics (`backend/eval/metrics.py`, also recorded for live incidents)
 
 ```sql
-metrics(incident_id TEXT, diagnosis TEXT, true_type TEXT, memory_enabled INTEGER,
+metrics(run_id TEXT, condition TEXT, seed INTEGER, position INTEGER,
+        incident_id TEXT, true_type TEXT, diagnosis TEXT, machine_id TEXT,
+        exposure INTEGER,                   -- k-th time this class appears in this run
+        memory_enabled INTEGER,
         mttr_sim_s INTEGER, agent_time_real_s REAL, human_wait_sim_s INTEGER,
         tool_calls INTEGER, attempts INTEGER,
         investigation_efficiency REAL,      -- decisive tool calls / total tool calls
         llm_confidence REAL, calibrated_confidence REAL,
-        memory_hit INTEGER,                 -- any match ≥ threshold
+        memory_hit INTEGER,                 -- any match passed the gate (6.3)
+        top_match_same_class INTEGER,       -- retrieval quality: rank-1 match is same class
         recommendation_correct INTEGER,     -- agent's FIRST recommendation == correct fix
         first_time_right INTEGER,           -- first EXECUTED action == full recovery
+        false_replay INTEGER,               -- recommended a fix that belongs to another class
+        escalated INTEGER,
+        llm_tokens INTEGER, hindsight_tokens INTEGER,
         ts INTEGER)
 ```
 
-`recommendation_correct` measures the agent; `first_time_right` depends on what the judge clicked — both are tracked, charts default to the agent-side metric.
+`recommendation_correct` measures the agent; `first_time_right` depends on what a human clicked — both are tracked, charts default to the agent-side metric.
 
-**Acceptance test that matters most:** `scripts/simulate.py` runs ≥5 incidents of a class on random machines in `auto_approve` mode, with memory ON and again with memory OFF. Each mode runs on its **own throwaway bank** (`memoryops-sim-<run_id>-<mode>`, deleted afterwards) so runs never contaminate each other or the demo banks (pattern from the cookbook's deliveryman benchmark). Output: a JSON results file + a markdown summary table (per incident: MTTR, tool calls, efficiency, confidence, correct?). With memory ON, MTTR and tool calls must trend down and confidence up; with memory OFF they must stay flat. If not, the demo is broken — fix before building UI polish.
+### 11.2 Battery & experimental design
+
+- **Scenario variants:** 4 classes × 3 variants = 12 (variants differ in machine, magnitude, onset timing and log wording), plus noise per occurrence from the templates.
+- **Run sequence:** 24 incidents per run (6 per class), interleaved so classes alternate. Each class's first two exposures happen on M1–M3; later exposures deliberately land on **held-out machines M4–M5** (transfer test). A sensor-drift incident is always placed right after config-regression learning (discrimination test).
+- **Conditions:** `memory_on` vs `memory_off`, **paired** — identical incident sequence and seeds; each (condition, seed) gets a fresh throwaway bank.
+- **Seeds:** 3 per condition (`--seeds`), controlling incident sampling and noise. LLM calls use `temperature=0` and a fixed `seed` where the API supports it; residual LLM nondeterminism is what the seeds + CIs absorb.
+- **Mode:** `auto_approve` (the recommended action is executed), **fast-forward clock** (sim time advances instantly; no real sleeping on verify windows), so a run costs only LLM + Hindsight latency.
+- Default full run: 24 × 2 × 3 = **144 incident runs**. `--quick`: 1 seed, 12 incidents, for smoke checks.
+
+### 11.3 What the report measures
+
+| Question | Metric | How it's reported |
+|---|---|---|
+| Does it learn? | recommendation accuracy, MTTR, tool calls, confidence **by exposure** (1st, 2nd, 3rd+) | mean + bootstrap 95% CI, ON vs OFF side by side |
+| Is the gain caused by memory? | paired difference ON − OFF (same seed, same position) | mean difference + 95% CI; CI excluding 0 = real effect |
+| Does it transfer across machines? | accuracy on first held-out-machine exposure after ≥1 exposure elsewhere | rate + CI, and rank of the prior same-class incident |
+| Does it discriminate? | `false_replay` count on the discrimination probes | "k / n false replays" |
+| Is retrieval good? | `top_match_same_class` (recall@1), gate precision | rate + CI; re-checks the 6.3 match rule at scale |
+| Is confidence honest? | Brier score of `calibrated_confidence` vs `recommendation_correct` | ON vs OFF; reliability table |
+| What does it cost? | LLM tokens, Hindsight tokens, real seconds per incident | mean per incident, total per run |
+| Where does it fail? | all incorrect recommendations, grouped by class | listed with incident IDs and Langfuse trace links |
+
+**MTTR honesty:** MTTR runs on the simulated clock (5.1), whose costs are defined, so the report always shows MTTR's drivers next to it (tool calls, attempts, trap fixes applied).
+
+### 11.4 Report & reproducibility
+
+`make eval` → `scripts/run_eval.py` → `docs/eval/<date>-<git_sha>/`:
+- `REPORT.md` — headline table, per-class tables by exposure, transfer, discrimination, retrieval, calibration, cost, failure list, and PASS/FAIL against 11.5.
+- `charts/*.png` — learning curves by exposure (ON vs OFF with CI bands), paired-difference plot, calibration plot.
+- `results.json` — every per-incident row; the Learning tab can load it (`GET /api/eval/latest`).
+- **Run metadata** in the report header: git SHA, model IDs, all config values, seeds, timestamps, package versions.
+- **Rate limits:** calls are throttled and the harness checkpoints after every incident, so an interrupted run resumes (`--resume`) instead of restarting. Throughput and Groq limits are measured on the first `--quick` run and the full run is sized to fit.
+- CI never runs the live eval (costs money, needs keys); CI runs the harness end-to-end with a fake LLM + fake memory to prove the pipeline works.
+
+### 11.5 Acceptance targets (report prints PASS/FAIL; misses are reported, not hidden)
+
+1. Memory ON, exposure 3+: recommendation accuracy higher than OFF, paired 95% CI excluding 0.
+2. Memory ON, exposure 3+: tool calls and MTTR lower than OFF, paired 95% CI excluding 0.
+3. Memory OFF: no significant trend across exposures (sanity check that the gain is memory, not drift).
+4. Discrimination: false replays ≤ 1 per 15 probes.
+5. Retrieval: recall@1 ≥ 0.8 when a same-class prior exists.
+
+If a target is missed, the fix is in the agent or memory design — never in the metric.
 
 ---
 
@@ -686,7 +824,16 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 5. **2:15** Sensor drift → agent does NOT replay "rollback" (different signature) → recommends recalibration. Discrimination proven.
 6. **2:40** Learning tab: MTTR curve [cold → warm], tool calls falling, confidence rising.
 7. **2:55** Toggle MEMORY OFF, trigger config regression → cold behavior again. Toggle ON → instant match. Live before/after.
-8. **3:15** (Optional) Switch to seeded bank: agent cites an incident from [6 weeks] ago. Close: "Day one it's a rookie. Every incident makes it better. That's what memory is for."
+8. **3:15** (Optional) **[LOAD 6-MONTH OPS HISTORY]** → agent cites an incident from [6 weeks] ago, responded to by a named operator. Close: "Day one it's a rookie. Every incident makes it better. That's what memory is for."
+
+**Kept ready for Q&A (not in the 3.5 min):** the Langfuse trace of the incident just shown (every LLM call, tool result, token count); `docs/eval/REPORT.md`; the Hindsight Cloud UI showing the bank's facts and observations.
+
+**Demo polish checklist:**
+- Zero console errors, zero dead buttons, zero placeholder text — click every control before demo day.
+- Streaming/loading state on everything: trace steps stream in, metrics animate, nothing "just appears".
+- Designed error states (Section 17.4) rehearsed: revoke the Groq key mid-rehearsal → calm "LLM unavailable — escalated to human" card, no crash. (COULD: show this live on stage.)
+- Rehearse 5+ times with a stopwatch, out loud. Reset → full script → reset.
+- Fallback: the full stack running locally on a second laptop.
 
 ---
 
@@ -699,7 +846,7 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 - `spike_recall_design.py sig|nosig`: 5 episodes (all 4 classes), with vs without a `SIGNATURE:` line, observed-signals-only queries. ✅ Chooses the record format and match rule. **Done — results in Section 14.**
 - `spike_groq.py`: list available models; tool-calling round trip on primary + fallback; provoke a malformed tool call and confirm the `tool_use_failed` / `failed_generation` shape; confirm `include_reasoning: false` suppresses reasoning. ✅ Record: fallback model choice, error shapes, typical latency. **Done — results in Section 14.**
 
-**Phase 1 — Simulator.** ✅ `pytest tests/test_simulator.py`: each of 4 types triggers on random machines; metrics degrade per taxonomy; every cell of the effects matrix (5.5) produces the specified effect incl. re-degradation timing; IGNORE cascades; custom builder maps to the right class incl. `ambiguous`; sim clock math; SQLite persists everything.
+**Phase 1 — Simulator + adapter + CI.** CI workflow and `Makefile` land in the first Phase 1 commit, so every later commit is checked. ✅ `backend/adapters/base.py` Protocol + simulator implementation + datadog stub; `tests/test_adapter.py` passes; `pytest tests/test_simulator.py`: each of 4 types triggers on random machines; metrics degrade per taxonomy; every cell of the effects matrix (5.5) produces the specified effect incl. re-degradation timing; IGNORE cascades; custom builder maps to the right class incl. `ambiguous`; sim clock math; SQLite persists everything.
 
 **Phase 2 — Agent.** ✅ `demo_dryrun.py` headless: config regression → real tool calls → valid recommendation → action executes → verify → episode retained (visible in Hindsight Cloud UI) → reworded same-type incident on another machine → recall returns prior episode above threshold → fewer tool calls, higher confidence, reasoning cites INC-ID → trap-fix loop works (restart → re-degrade → lesson retained → re-investigate → rollback) → memory OFF run shows no memory events.
 
@@ -707,9 +854,13 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 
 **Phase 4 — Frontend.** ✅ Full demo script (Section 12) runs end-to-end in the browser, including memory toggle, re-degradation animation, and reset.
 
-**Phase 5 — Measure & Polish.** ✅ `simulate.py` acceptance test (Section 11) passes; real numbers replace placeholders in Sections 1, 12 and README; Learning charts correct; Memory Browser shows real retained content; Langfuse traces present; seeded bank loaded; README with architecture diagram, how to run, and "How Hindsight memory is used" (required deliverable). Stretch: remaining two incident types polished; memory-mode comparison in `simulate.py` (recall only vs recall + mental model).
+**Phase 5 — Evaluation suite.** ✅ `make eval --quick` runs end-to-end on live services; full run completes (with `--resume` if interrupted); `docs/eval/<run>/REPORT.md` committed with PASS/FAIL against 11.5; harness covered in CI with fakes; Learning tab reads `results.json`.
 
-**Incremental order inside phases:** config regression end-to-end first (sim → agent → API → UI), then sensor drift, then network failure and resource exhaustion, then custom builder, then IGNORE cascade.
+**Phase 6 — Seeded history.** ✅ `fixtures/seed_history.jsonl` generated and committed (~48 episodes, contradictions, escalations); `make seed` loads it; **[LOAD 6-MONTH OPS HISTORY]** switches banks; Memory Browser + Learning tab show the history.
+
+**Phase 7 — Polish & rehearsal.** ✅ Real numbers from the committed eval report replace every placeholder (Sections 1, 12, 18, README); README with architecture diagram, eval table, CI badge, `/docs` link and "How Hindsight memory is used"; 6 ADRs; `make demo` / `docker compose up` verified from a fresh clone; demo polish checklist (Section 12) done; 5+ timed rehearsals. COULD: 500-episode load test (reported as its own measured result), offline fallback laptop, live failure demo.
+
+**Incremental order inside phases:** config regression end-to-end first (sim → agent → API → UI), then sensor drift, then network failure and resource exhaustion, then custom builder, then IGNORE cascade. Tests are written with each piece, not after.
 
 ---
 
@@ -735,12 +886,13 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 
 | Item | Initial value | Set by |
 |---|---|---|
-| `MEMORY_MATCH_REL_RERANK` / `MEMORY_MATCH_MIN_RERANK` | 0.15 / 0.05 (from 14.1) | Re-check in Phase 5 `simulate.py` over ≥20 incidents |
+| `MEMORY_MATCH_REL_RERANK` / `MEMORY_MATCH_MIN_RERANK` | 0.15 / 0.05 (from 14.1) | Re-checked by the eval suite's retrieval metrics (11.3) |
+| Eval throughput vs Groq rate limits | unknown | First `make eval --quick` (Phase 5) |
 | `SIM_SPEED` | 10 | Phase 4 demo rehearsal |
 | `VERIFY_WINDOW_SIM_S` | 180 | Phase 1 (must exceed max re-degrade delay) |
 | `ESCALATION_PENALTY_SIM_S` | 1800 | Phase 1 |
-| Calibrated-confidence formula weights | TBD | Phase 5 simulation |
-| Headline MTTR / confidence numbers | placeholders | Phase 5 simulation |
+| Calibrated-confidence formula weights | TBD | Phase 5 eval (chosen to minimize Brier score on a held-out seed) |
+| Headline MTTR / accuracy / confidence numbers | placeholders | Phase 5 eval report |
 
 ---
 
@@ -785,6 +937,76 @@ NEXT_PUBLIC_API_BASE=http://localhost:8000
 - [ ] Live demo rehearsed (reset → full script → reset) at least twice
 - [ ] Content deliverables per team member: article, social media post, video (per the official content guide)
 - [ ] Realistic data: machine profiles, log lines, config versions, seeded history all look real
+- [ ] Committed eval report (`docs/eval/`) + its headline table in the README
+- [ ] CI badge green on the submitted commit
+
+---
+
+## 17. Engineering Quality
+
+### 17.1 Tests (pytest, no network)
+Written alongside each phase; every external dependency is faked (LLM client, Hindsight client, clock). Target ≥ 40 tests by Phase 4. Coverage priorities: effects matrix (every cell), re-degradation timing, custom classifier, adapter contract, guardrails (whitelist, schema, tool-call cap, argument validation), LLM retry/fallback/`tool_use_failed`, graph routing (full, partial, exhausted, escalate paths), memory rendering + match rule, eval stats on known inputs, health checks.
+
+### 17.2 CI (`.github/workflows/ci.yml`, runs on every push, **no secrets**)
+`uv sync` → `ruff check` → `ruff format --check` → `mypy backend` → `pytest` → frontend `npm ci && npm run lint && npm run build`. README shows the badge. The live eval is never run in CI.
+
+### 17.3 Architecture Decision Records (`docs/adr/`, ~10 lines each)
+Context → Decision → Consequences. These double as the required "how Hindsight memory is used" explanation, in the format real engineering orgs use.
+1. `0001-single-agent.md` — one protagonist, one memory, one measurable learning curve.
+2. `0002-hindsight-only-memory.md` — no vector DB, no second memory; one bank per environment (live / seeded / eval).
+3. `0003-environment-adapter.md` — agent sees six typed methods; simulator is one implementation (5.9).
+4. `0004-deterministic-memory-touchpoints.md` — memory at two fixed points, not an LLM tool; clean ON/OFF comparison.
+5. `0005-reranker-match-rule.md` — measured: semantic cosine doesn't separate matches, the reranker does (14.1).
+6. `0006-simulated-clock-mttr.md` — MTTR on a defined sim clock, human wait excluded, drivers always reported.
+
+### 17.4 Designed error states (graceful *and* visible)
+| Failure | Backend behavior | UI state |
+|---|---|---|
+| Groq down / all retries fail | `ESCALATE_HUMAN` recommendation, `error{LLM_UNAVAILABLE}` | Calm amber card: "LLM unavailable — escalated to on-call engineer" |
+| Malformed tool call | salvage → retry → corrective message (7.5) | Trace line: "model returned invalid tool call — retrying" |
+| Hindsight recall fails | continue without memory, `error{MEMORY_UNAVAILABLE}` | Memory panel: "Memory unavailable — reasoning from evidence only" |
+| Hindsight retain fails | outbox + background retry (6.2) | Memory Browser row badge: "pending sync" |
+| Guardrail violation | structured `error` event, action not executed | Inline message on the control that caused it |
+| Backend unreachable | — | Header banner with retry countdown |
+
+### 17.5 Reproducibility
+- `make setup` (uv sync + npm ci), `make dev`, `make test`, `make lint`, `make typecheck`, `make eval` / `make eval-quick`, `make seed`, `make demo`, `make reset`.
+- `docker compose up` runs backend + frontend with `.env`; verified from a fresh clone before submission.
+- FastAPI's OpenAPI docs at `/docs`, linked from the README — typed contracts, visible.
+
+---
+
+## 18. Q&A Armor (every answer cites a measurement or a design fact)
+
+Bracketed values are filled from the committed eval report before the demo; if a number isn't measured, the answer says so.
+
+| Judge asks | Answer |
+|---|---|
+| "How is this different from RAG over runbooks?" | RAG retrieves documents; we accumulate **outcomes**. Memory holds which fix worked or failed on which signature, carries it across machines, and records when a fix wears off — experience, not text. |
+| "Is the matching just string matching?" | No. Queries are paraphrased and contain no log text, machine IDs or versions. Hindsight runs semantic, keyword, graph and temporal retrieval (TEMPR) and reranks with a cross-encoder. In our design spike the correct past incident ranked #1 in 5/5 queries with ≥4× the reranker score of any false match (14.1); across the full eval, recall@1 is [x] (11.3). |
+| "What if the LLM hallucinates?" | Every output is Pydantic-validated against a 6-action whitelist; tool arguments are validated before execution (we caught a model silently rewriting an invalid machine ID); malformed calls retry, then fall back to a second model; the final fallback is escalation to a human, never an unbounded action. Every decision is in the Langfuse trace. |
+| "What happens at 10,000 episodes?" | Not measured at that scale. Measured: recall takes 0.13–0.16 s at small scale (14.1), and our match rule is relative to the top result, so it doesn't depend on absolute scores drifting as the bank grows. Retrieval scaling is Hindsight's engine. [If the COULD load test runs: result at 500 episodes.] |
+| "Would a company deploy this?" | The agent sees only six typed adapter methods; implement them against your observability and ops stack and nothing else changes. The workflow — agent recommends, on-call engineer approves — is how incident tools are deployed today. |
+| "Why one agent, not multi-agent?" | One protagonist, one memory bank, one measurable learning curve. Multi-agent would fragment the memory story, and the eval shows the single loop learns: [paired ON−OFF accuracy gain, CI]. |
+| "Is the improvement real or scripted?" | Run `make eval`: paired memory ON vs OFF, same incidents, 3 seeds, 95% CIs, committed report [link]. Or trigger any incident yourself in the simulator. |
+
+---
+
+## 19. Priority Stack & Anti-Scope
+
+**MUST (win conditions)**
+1. Core loop works flawlessly (Phases 1–4), adapter boundary from day one
+2. Evaluation suite + committed report (Phase 5)
+3. Seeded 6-month history, realistic and contradictory (Phase 6)
+4. Rehearsed 3.5-min demo incl. sabotage beat + memory toggle
+5. Q&A answers memorized, every claim traceable to a measurement
+6. README: architecture diagram, eval table, CI badge
+
+**SHOULD (strong signals)** — pytest suite + CI (built continuously from Phase 1) · Langfuse trace ready for Q&A · 6 ADRs · one-command `make demo` / docker compose
+
+**COULD (if time remains)** — 500-episode load test (reported as measured) · offline fallback laptop · live failure-handling demo · memory-mode comparison (recall only vs recall + mental model) in the eval
+
+**WON'T** — auth / multi-user / multi-tenancy · real Datadog/K8s integrations · more than 4 incident types · a second agent, second memory or MCP server · deployment beyond docker compose
 
 ---
 
