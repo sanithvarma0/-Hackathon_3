@@ -1,4 +1,7 @@
-# MemoryOps — Build Specification v1.8
+# MemoryOps — Build Specification v1.9
+
+> **v1.9 changes (Phase 3 built):** a `MemoryOpsService` layer sits between FastAPI and the simulator/agent (the HTTP layer only validates and maps errors); endpoints gain `/api/memory/records` (every retained episode and lesson, verbatim) and `/api/usage` (spend + tokens, spend cap); `auto_approve` dropped from the API (the demo is human-in-the-loop, the eval harness auto-approves in-process); `/api/eval/latest` moves to Phase 5 with the eval suite. **No-spoiler rule:** random and custom incidents hide their true class in every response and event until closed. Incident IDs continue across backend restarts (offset from the episode table) and restart at INC-001 only on a wiped reset. Per-incident spend is scoped to the run, not just the incident ID (IDs repeat across runs — a live smoke test caught 4.7x over-counting). The event contract (9) now lists exactly what the code emits.
+>
 
 > **v1.8 changes (LLM provider + spend tracking):** primary LLM is now **OpenAI `gpt-5.4-mini`** with Groq `gpt-oss-120b` as a cross-provider fallback (Groq's free tier is 8,000 tokens/min; OpenAI's quota for this key is 180M/min; Gemini returned 503 on every current model). Every LLM call and memory write is recorded in a persistent **usage ledger** with tokens and cost from the published price list, and a **hard spend cap** stops LLM calls (→ escalation) when reached (7.6). Escalations now close with the **on-call engineer's fix on the ticket**, so the agent learns from what humans did (5.5, 6.2). Measured OpenAI constraints and dry-run results in 14.1c.
 >
@@ -701,54 +704,75 @@ class Recommendation(BaseModel):
 
 ---
 
-## 9. FastAPI + SSE (Phase 3)
+## 9. FastAPI + SSE (Phase 3) — ✔ built
 
-**Endpoints:**
+**Layers:** `backend/main.py` (HTTP: request models with `extra="forbid"`, one `ServiceError → {"code", "message"}` handler) → `backend/service.py` (`MemoryOpsService`: owns the simulator, the agent runner, the event bus and live metrics; every refusal is a `ServiceError` *and* an `error` event) → simulator control plane + `AgentRunner`. Tests drive the same service with a manual clock and a scripted LLM (`tests/test_api.py`), so no test needs the network.
+
+**Endpoints** (OpenAPI docs at `/docs`):
 
 ```
-GET  /api/health                      # config + reachability of Groq / Hindsight / Langfuse
-GET  /api/state                       # machines + KPIs (initial load)
-GET  /api/stream                      # SSE — ONE global stream; supports Last-Event-ID replay
-POST /api/incident/predefined         # {type, machine?, memory_enabled, auto_approve?}
-POST /api/incident/custom             # structured builder payload + memory_enabled
+GET  /api/health                      # reachability of Hindsight / OpenAI / Groq / Langfuse
+GET  /api/state                       # plant (machines, gateways, KPIs) + active incident
+GET  /api/stream                      # SSE — ONE global stream; Last-Event-ID replay
+POST /api/incident/predefined         # {type, machine?, memory_enabled}
+POST /api/incident/custom             # {spec: CustomIncidentSpec, memory_enabled}  (no free text)
 POST /api/incident/random             # {memory_enabled}
-POST /api/incident/{id}/action        # {action} → resumes graph
-POST /api/incident/{id}/ignore        # cascade; stays awaiting_action
-GET  /api/incidents                   # history for Memory Browser
-GET  /api/incidents/{id}              # episode text(s) + stored trace events
-GET  /api/metrics                     # learning-curve series
-GET  /api/memory/runbook              # current Incident Patterns mental model content
-GET  /api/eval/latest                 # latest committed eval results.json (Learning tab)
+POST /api/incident/{id}/action        # {action} → 202; resumes the paused graph
+POST /api/incident/{id}/ignore        # condition worsens now; stays awaiting_action
+GET  /api/incidents                   # history (IncidentView list)
+GET  /api/incidents/{id}              # view + pending recommendation + stored events
+                                      #   + memory records + metrics row
+GET  /api/memory/records              # every episode / lesson, exact text retained
+GET  /api/memory/runbook              # Incident Patterns mental model content
+GET  /api/metrics                     # learning-curve series (live_metrics rows)
+GET  /api/usage                       # tokens + cost: all-time, this run, by model; cap
 POST /api/admin/reset                 # {bank: "live"|"seeded", wipe_memory: bool}
+GET  /api/eval/latest                 # Phase 5 (with the eval suite)
 ```
 
-**Why one global stream:** the frontend opens it once at page load, so there is no race between "POST created the incident" and "client subscribed". Every event carries `incident_id` (or null). The event bus keeps a ring buffer (last ~2000 events) with monotonically increasing IDs; `EventSource` reconnects replay from `Last-Event-ID`.
+Status codes: 409 `INCIDENT_ACTIVE` (one incident at a time), 409 `NOT_AWAITING_ACTION`, 404 `INCIDENT_NOT_FOUND`, 400 `SEEDED_IS_READ_ONLY`, 422 for any schema violation (unknown action, free text in the custom builder).
 
-**SSE event types (contract with frontend):**
+**No-spoiler rule:** `IncidentView.type` is `null` for random and custom incidents until the incident closes (the judge picked a predefined type, so nothing is hidden there). This applies to HTTP responses and to `incident_triggered` events; simulator notifications carry only symptom messages.
+
+**Why one global stream:** the frontend opens it once at page load, so there is no race between "POST created the incident" and "client subscribed". Every event carries `incident_id` (or null). `EventBus` (`backend/events.py`): monotonically increasing IDs that continue across restarts; a 2000-event ring buffer serves `Last-Event-ID` replay without duplicates; every event except the 1 Hz `state_changed` tick is persisted to SQLite (`bus_events`) for the incident detail view; each subscriber has a bounded queue (a stalled browser loses its oldest events instead of slowing others); 15 s keep-alive pings.
+
+**Background loops (realtime clock only):** 1 Hz simulator tick + `state_changed`; 30 s outbox retry for episodes Hindsight did not accept (`memory_synced` when they land); 20 s runbook watch (`runbook_updated` when the mental model changes).
+
+**Reset:** `wipe_memory=false` keeps memory, metrics and incident numbering (IDs must never repeat while memory holds them). `wipe_memory=true` deletes the live bank, episodes, metrics and stored events, starts numbering again at INC-001 and starts a new usage run label.
+
+**SSE event types (contract with the frontend; `data` is `{id, ts, type, incident_id, data}`):**
 
 ```
-state_changed        {machines: [...], gateways: [...], line_throughput, oee, alerts}  # ~1 Hz
-incident_triggered   {incident}
-investigation_start  {incident_id, attempt}
-memory_hints         {query, hints: [...]}                        # recall_hints
-memory_skipped       {node}                                       # memory OFF
-tool_call            {tool_name, args}
-tool_result          {tool_name, result}
-investigation_summary{summary, tool_call_count}
-memory_search        {query}
-memory_results       {matches: [{incident_id, score, summary}], learned_patterns: [...]}
-recommendation       {action, diagnosis, confidence, calibrated_confidence,
-                      reasoning, cited_incidents, actions_known_to_fail}
-awaiting_action      {options: [...]}
-action_executed      {action, effect, recovery_pct}
-verifying            {window_sim_s}
-re_degradation       {incident_id, message}                       # trap fix wearing off
-lesson_written       {document_id, text}
-outcome              {resolved: bool, escalated: bool, mttr_sim_s}
-memory_written       {document_id, episode_summary}
-runbook_updated      {content, updated_at}                        # mental model changed
-metrics_updated      {series}
-error                {code, message}                              # never crash
+state_changed         {plant, active_incident}                     # 1 Hz, not persisted
+incident_triggered    {incident: IncidentView}
+incident_detected     {message, ts}                               # alert fired; agent starts
+investigation_queued  {...}
+investigation_start   {attempt}
+memory_hints          {query, hints}                              # recall_hints
+memory_skipped        {node}                                      # memory OFF
+tool_call             {tool_name, args}
+tool_result           {tool_name, result}
+guardrail             {...}                                       # a blocked/clamped call
+investigation_summary {summary, tool_call_count}
+memory_search         {query}
+memory_results        {matches: [{incident_id, score, ...}]}
+recommendation        {action, diagnosis, confidence, calibrated_confidence,
+                       reasoning, cited_incidents, actions_known_to_fail}
+awaiting_action       {options}
+action_executed       {action, ...}                               # receipt only — no effect
+verifying             {window_sim_s}
+verify_result         {...}                                       # inferred from observation
+re_degradation        {message, ts}                               # trap fix wearing off
+lesson_written        {document_id, text}
+outcome               {resolved, escalated, mttr_sim_s}
+memory_written        {document_id, episode_summary}
+memory_synced         {...}                                       # outbox retry succeeded
+incident_ignored      {...}
+incident_closed       {message, ts}
+runbook_updated       {content}
+metrics_updated       {row}
+reset                 {bank_id, wipe_memory}
+error                 {code, message}                             # never crash
 ```
 
 ---
@@ -985,7 +1009,7 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 
 **Phase 2 — Agent. ✔ DONE** (158 tests; three live dry runs, 14.1b). ✅ `demo_dryrun.py` headless: config regression → real tool calls → valid recommendation → action executes → verify → episode retained (visible in Hindsight Cloud UI) → reworded same-type incident on another machine → recall returns prior episode above threshold → fewer tool calls, higher confidence, reasoning cites INC-ID → trap-fix loop works (restart → re-degrade → lesson retained → re-investigate → rollback) → memory OFF run shows no memory events.
 
-**Phase 3 — API + SSE + Mental Model.** ✅ Incident Patterns mental model created at startup and readable after a few incidents; all endpoints work; one global SSE stream carries the full event contract; reconnect replays via Last-Event-ID; human-in-the-loop resume via action endpoint; guardrail violations and dependency failures emit `error` events instead of crashing.
+**Phase 3 — API + SSE + Mental Model. ✔ DONE** (189 tests; live smoke test 14.1d). ✅ Incident Patterns mental model created at startup and readable after a few incidents; all endpoints work; one global SSE stream carries the full event contract; reconnect replays via Last-Event-ID; human-in-the-loop resume via action endpoint; guardrail violations and dependency failures emit `error` events instead of crashing.
 
 **Phase 4 — Frontend.** ✅ Full demo script (Section 12) runs end-to-end in the browser, including memory toggle, re-degradation animation, and reset.
 
@@ -1050,6 +1074,19 @@ Findings:
 - **`reasoning_effort` was silently dropped** on the first call of every run (tools + reasoning unsupported on Chat Completions) — caught by the ledger's failed-call count, fixed by configuring `none` explicitly.
 - **`investigate:force` was ~32% of spend** while the model never stopped on its own; the remaining-budget hint cut forced conclusions to 2 of 6 incidents.
 - **Total spend for all development runs so far: $0.26** (ledger).
+
+### 14.1d Phase 3 live smoke test (2026-09-28, `uvicorn` + curl, throwaway bank, `SIM_SPEED=20`)
+
+Two config regressions (M3, then M1) driven entirely over HTTP, recorded from `/api/stream`:
+
+| Incident | Recommendation | Memory | Tool calls | Sim MTTR | Tokens | Cost |
+|---|---|---|---|---|---|---|
+| INC-001 (cold) | ROLLBACK_CONFIG, conf 0.96 — correct | no match | 10 | 563 s | 10,397 | $0.0101 |
+| INC-002 (repeat) | ROLLBACK_CONFIG, conf 0.98, cites INC-001 — correct | hit, same class | 9 | 498 s | 11,354 | $0.0083 |
+
+- All four dependencies `ok` on `/api/health`; ~20 s from trigger to recommendation, ~20 s from approval to finished (includes the 180 sim-s verify window at 20x). Zero exceptions in the server log.
+- One run each — anecdotes, not results; the eval suite (11) measures the effect with seeds and CIs.
+- **Bug caught by this test:** per-incident spend summed every `INC-001` ever recorded in the ledger (earlier dry runs) — 51k tokens reported for a 10.9k-token incident. Fixed by scoping to the run label; regression test `test_incident_spend_ignores_older_runs_with_the_same_incident_id`.
 
 ### 14.2 Still to be measured
 

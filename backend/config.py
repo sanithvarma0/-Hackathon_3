@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     # Simulator / agent
     sim_speed: float = Field(10.0, gt=0)
+    sim_seed: int | None = None  # None: a fresh world each start; set for reproducible demos
     verify_window_sim_s: int = 180
     escalation_penalty_sim_s: int = 1800
     # A past incident counts as a memory match when its best reranker score is at least

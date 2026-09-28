@@ -175,12 +175,18 @@ class Simulator:
         self._lock = threading.RLock()
         self._listeners: list[Callable[[SimNotification], None]] = []
         self._rng = random.Random(seed)
+        self._id_offset = 0
         self._init_world()
 
     # ---- lifecycle --------------------------------------------------------------------------
 
     def subscribe(self, listener: Callable[[SimNotification], None]) -> None:
         self._listeners.append(listener)
+
+    def set_incident_offset(self, offset: int) -> None:
+        """Continue numbering after `offset` (IDs must not repeat while memory persists)."""
+        with self._lock:
+            self._id_offset = max(0, offset)
 
     def reset(self) -> None:
         with self._lock:
@@ -463,7 +469,7 @@ class Simulator:
 
             onset = int(self._clock.now())
             count = self._conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
-            incident_id = f"INC-{count + 1:03d}"
+            incident_id = f"INC-{count + 1 + self._id_offset:03d}"
             fault = _Fault(
                 incident_id=incident_id,
                 spec=spec,

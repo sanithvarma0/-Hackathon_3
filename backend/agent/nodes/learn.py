@@ -152,6 +152,7 @@ async def learn(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             ),
             "investigation_efficiency": round(decisive / len(last_steps), 3) if last_steps else 0.0,
             "first_action_recommended": first["action"],
+            "diagnosis": first.get("diagnosis"),
             "first_confidence": first["confidence"],
             "first_calibrated_confidence": first["calibrated_confidence"],
             "first_cited_incidents": first.get("cited_incidents", []),

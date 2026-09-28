@@ -2,7 +2,7 @@
 
 **A self-learning production incident commander.** A simulated 5-machine factory develops incidents; a single LangGraph agent investigates, recommends a fix, and — through [Hindsight](https://hindsight.vectorize.io) memory — resolves recurring incident classes faster and more accurately every time.
 
-> Status: **Phase 2 done** — LangGraph agent with two Hindsight memory touchpoints, human-in-the-loop, trap-fix detection and retry, Langfuse tracing; 158 tests; live dry runs in BUILD_PLAN.md 14.1b. See [BUILD_PLAN.md](BUILD_PLAN.md) for the full specification and [TECH_STACK.md](TECH_STACK.md) for the stack and decision log.
+> Status: **Phase 3 done** — FastAPI service with one global SSE stream (Last-Event-ID replay), human-in-the-loop over HTTP, spend and token tracking at `/api/usage`, no-spoiler incident views; 189 tests; live smoke test in BUILD_PLAN.md 14.1d. See [BUILD_PLAN.md](BUILD_PLAN.md) for the full specification and [TECH_STACK.md](TECH_STACK.md) for the stack and decision log.
 
 ## Prerequisites
 
@@ -29,6 +29,20 @@ cd frontend && npm run dev
 ```
 
 Check `http://localhost:8000/api/health` — every dependency should report `ok`.
+
+Drive an incident from the terminal (the UI does the same over the same API):
+
+```bash
+curl -N localhost:8000/api/stream &                                   # live events
+curl -XPOST localhost:8000/api/incident/predefined \
+     -H 'content-type: application/json' -d '{"type":"config_regression","machine":"M3"}'
+curl localhost:8000/api/incidents/INC-001                             # pending recommendation
+curl -XPOST localhost:8000/api/incident/INC-001/action \
+     -H 'content-type: application/json' -d '{"action":"ROLLBACK_CONFIG"}'
+curl localhost:8000/api/usage                                         # tokens + spend
+```
+
+API reference: `http://localhost:8000/docs`.
 
 ## Phase 0.5 spikes
 
