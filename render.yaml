@@ -43,10 +43,8 @@ services:
         value: "10"
       - key: TRIGGER_LIMIT_PER_HOUR
         value: "40"
-      - key: CORS_ORIGINS        # JSON list, e.g. ["https://memoryops.vercel.app"]
-        sync: false
-      - key: DEMO_PASSCODE
-        sync: false
+      - key: CORS_ORIGINS        # public demo, no cookies: any origin; or list the Vercel URL(s)
+        value: "*"
       - key: HINDSIGHT_API_KEY
         sync: false
       - key: OPENAI_API_KEY

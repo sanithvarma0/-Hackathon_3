@@ -19,7 +19,7 @@ browser ──HTTPS──▶ Vercel (Next.js UI)
 
 | Env var | Effect |
 |---|---|
-| `DEMO_PASSCODE` | If set, every `POST /api/*` (trigger, approve, ignore, reset) needs the header `X-Demo-Passcode`. Reading the plant, the stream, memory and the eval report stays open. The UI asks for the passcode once and keeps it in the browser. |
+| `DEMO_PASSCODE` | Off in the public deployment (unset). If set, every `POST /api/*` (trigger, approve, ignore, reset) needs the header `X-Demo-Passcode`. Reading the plant, the stream, memory and the eval report stays open. The UI asks for the passcode once and keeps it in the browser. |
 | `TRIGGER_LIMIT_PER_HOUR` | Caps the number of new incidents in any rolling hour (default 40). Beyond the cap, requests get `429 RATE_LIMITED`. |
 | `LLM_SPEND_CAP_USD` | Hard cap on LLM spend, tracked in the usage ledger on the disk. |
 
@@ -34,8 +34,6 @@ browser ──HTTPS──▶ Vercel (Next.js UI)
 3. Fill in the secret values Render asks for:
    - `HINDSIGHT_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`
    - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`
-   - `DEMO_PASSCODE`: any phrase
-   - `CORS_ORIGINS`: `["http://localhost:3000"]` for now; step 3 updates it
 4. Deploy. Check that `https://<service>.onrender.com/api/health` reports every dependency as `ok`.
 
 The Blueprint uses the Hindsight banks `memoryops-demo` / `memoryops-demo-seeded`, which are separate from development and eval banks.
@@ -47,9 +45,9 @@ The Blueprint uses the Hindsight banks `memoryops-demo` / `memoryops-demo-seeded
 3. Add the environment variable `NEXT_PUBLIC_API_BASE` = `https://<service>.onrender.com` (no trailing slash). It is inlined at build time, so redeploy after changing it.
 4. Under **Settings** → **Git**, set the production branch to the deployment branch, then deploy.
 
-## 3. Connect them
+## 3. CORS
 
-On Render, set `CORS_ORIGINS` to the Vercel URL as a JSON list, for example `["https://memoryops.vercel.app"]`. The service redeploys automatically.
+`render.yaml` sets `CORS_ORIGINS=*`. The demo is public and the API uses no cookies, so any origin is allowed. To restrict it, set `CORS_ORIGINS` to the Vercel URL, either comma-separated or as a JSON list.
 
 ## Local / fallback: Docker Compose
 

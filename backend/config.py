@@ -1,11 +1,12 @@
 """Application settings, loaded from environment variables and `.env`."""
 
+import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -59,8 +60,9 @@ class Settings(BaseSettings):
     max_attempts: int = 3
     sqlite_path: Path = REPO_ROOT / "data" / "memoryops.db"
 
-    # CORS: the Next.js dev server locally; the Vercel URL(s) in production (JSON list in env)
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # CORS: the Next.js dev server locally; the Vercel URL(s) in production. In env: a JSON list
+    # or comma-separated origins; "*" allows any origin (the API uses no cookies).
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
     # Public deployment guard (docs/DEPLOY.md). Empty passcode = open (local development).
     # With a passcode, reading the plant and the stream stays open; every action (trigger,
@@ -68,6 +70,18 @@ class Settings(BaseSettings):
     # the LLM / Hindsight credits. The trigger limit caps incidents per rolling hour.
     demo_passcode: str = ""
     trigger_limit_per_hour: int = Field(40, ge=1)
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_origins(cls, v: object) -> object:
+        if not isinstance(v, str):
+            return v
+        v = v.strip()
+        if not v:
+            return ["http://localhost:3000"]
+        if v.startswith("["):
+            return json.loads(v)
+        return [o.strip().rstrip("/") for o in v.split(",") if o.strip()]
 
 
 @lru_cache
