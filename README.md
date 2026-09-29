@@ -6,6 +6,18 @@
 
 **Live demo: https://memoryops.vercel.app** (API: https://memoryops-api.onrender.com/docs). The demo is public and needs no login. Click **VISION DROPOUT** or **SERVO DRIFT** under **◆ SITE** and watch the agent cite a past incident. See [docs/DEMO.md](docs/DEMO.md) for the walkthrough.
 
+## Links
+
+| | |
+|---|---|
+| Live app | https://memoryops.vercel.app |
+| Article | https://dev.to/bunny0711/the-fix-wasnt-in-the-logs-hindsight-remembered-it-28b0 |
+| Video (3:59) | https://youtu.be/g4Yi_GZhfNI |
+| LinkedIn post | https://www.linkedin.com/feed/update/urn:li:activity:7510646908323921920/ |
+| Reddit | https://www.reddit.com/r/LLMDevs/comments/1wt6ooh/my_incident_agent_escalated_once_then_fixed_the/ |
+| Eval report | [docs/eval/20260929-062025-06ac955/REPORT.md](docs/eval/20260929-062025-06ac955/REPORT.md) |
+| Demo walkthrough | [docs/DEMO.md](docs/DEMO.md) |
+
 ## Results (paired memory ON vs OFF, 144 live incident runs)
 
 The same agent ran identical incident sequences with memory ON and memory OFF, over 3 seeds and 24 incidents each. It was scored against the simulator's ground truth. Full report: [`docs/eval/20260929-062025-06ac955/REPORT.md`](docs/eval/20260929-062025-06ac955/REPORT.md).
