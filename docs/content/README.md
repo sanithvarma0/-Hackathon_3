@@ -46,7 +46,7 @@ The repo is now `github.com/sanithvarma0/memoryops`. The live site, the API and 
   - https://www.reddit.com/r/LLMDevs/comments/1wt6ooh/my_incident_agent_escalated_once_then_fixed_the/ (Reddit spam filter)
   - r/AIMemory (AutoModerator: 50-karma minimum)
   - https://www.reddit.com/r/SideProject/comments/1wt6stk/my_incident_agent_escalated_once_then_fixed_the/ (removed)
-- [ ] Video: 2–5 min, 1080p, public on YouTube, with the thumbnail.
+- [x] Video: https://youtu.be/g4Yi_GZhfNI (3:59, YouTube)
 
 ## Teams
 
