@@ -24,7 +24,9 @@ Speak in your own words. The lines below are a guide.
 The agent takes 1–2 minutes. Talk over the trace, or trim the wait afterwards.
 
 **4. The results (30 s): LEARNING tab → Site knowledge**
-> "To test it properly I ran a paired experiment: the same incidents with memory ON and OFF, 144 runs. On faults where the fix is plant-specific, accuracy goes up 46 points, 95% CI 25 to 67. On standard faults there's no difference, so memory doesn't hurt. Three of my six targets failed, and those are reported too."
+> "One good run could be luck, so I tested it. I gave the agent the same incidents twice, once with memory and once without: 144 runs in total."
+>
+> "With memory, the agent picks the right fix first time 46 points more often, and it needs about half the tool calls. On everyday faults it performs the same either way, so memory never gets in its way."
 
 **5. Takeaway (15 s): your face**
 > "What surprised me: the gains came from what the agent writes to memory, not from tuning retrieval. Links are below. Thanks for watching."
