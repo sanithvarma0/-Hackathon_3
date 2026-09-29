@@ -332,8 +332,26 @@ async def test_incident_ids_continue_across_a_backend_restart():
 
     second = Rig(conn)  # same database, fresh process
     await second.service.start()
+    # the finished incident is still listed and readable after the restart
+    listed = (await second.http.get("/api/incidents")).json()
+    assert [i["id"] for i in listed] == ["INC-001"] and listed[0]["status"] == "resolved"
+    assert (await second.http.get("/api/incidents/INC-001")).status_code == 200
     r = await second.http.post("/api/incident/predefined", json={"type": "sensor_drift"})
     assert r.json()["id"] == "INC-002"
+    await second.service.stop()
+
+
+async def test_restart_drops_an_incident_left_open_and_reset_clears_the_log():
+    conn = connect(":memory:")
+    first = Rig(conn)
+    await first.service.start()
+    await first.http.post("/api/incident/predefined", json={"type": "sensor_drift"})
+    await first.service.stop()  # restarted mid-incident: no fault, no agent run behind it
+
+    second = Rig(conn)
+    await second.service.start()
+    assert (await second.http.get("/api/incidents")).json() == []
+    assert (await second.http.get("/api/state")).json()["active_incident"] is None
     await second.service.stop()
 
 

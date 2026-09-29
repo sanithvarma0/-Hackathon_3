@@ -8,6 +8,16 @@ services:
     region: singapore
     branch: claude/youthful-archimedes-ocdu48
     dockerfilePath: ./Dockerfile
+    # Redeploy only when the backend image changes: a service with a disk has ~1 min of
+    # downtime per deploy, so docs/frontend pushes must not restart it.
+    buildFilter:
+      paths:
+        - backend/**
+        - docs/eval/**
+        - Dockerfile
+        - .dockerignore
+        - pyproject.toml
+        - uv.lock
     healthCheckPath: /api/state
     numInstances: 1          # one process owns the plant simulation
     disk:

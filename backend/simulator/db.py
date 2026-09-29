@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS actions_log (
 """
 
 TABLES = ("machines", "machine_history", "events", "logs", "incidents", "actions_log")
+# The incident log survives a backend restart; only an explicit reset clears it.
+WORLD_TABLES = ("machines", "machine_history", "events", "logs")
 
 
 def connect(path: Path | str) -> sqlite3.Connection:
@@ -101,7 +103,15 @@ def connect(path: Path | str) -> sqlite3.Connection:
     return conn
 
 
-def clear(conn: sqlite3.Connection) -> None:
-    for table in TABLES:
+def clear(conn: sqlite3.Connection, tables: tuple[str, ...] = TABLES) -> None:
+    for table in tables:
         conn.execute(f"DELETE FROM {table}")  # noqa: S608 - fixed table names
+    conn.commit()
+
+
+def drop_unfinished_incidents(conn: sqlite3.Connection) -> None:
+    """After a restart, an incident that was still open has no fault or agent run behind it."""
+    unfinished = "SELECT id FROM incidents WHERE status NOT IN ('resolved', 'escalated')"
+    conn.execute(f"DELETE FROM actions_log WHERE incident_id IN ({unfinished})")  # noqa: S608
+    conn.execute("DELETE FROM incidents WHERE status NOT IN ('resolved', 'escalated')")
     conn.commit()

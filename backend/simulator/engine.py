@@ -181,7 +181,7 @@ class Simulator:
         self._listeners: list[Callable[[SimNotification], None]] = []
         self._rng = random.Random(seed)
         self._id_offset = 0
-        self._init_world()
+        self._init_world(keep_incident_log=True)  # a restart must not erase finished incidents
 
     # ---- lifecycle --------------------------------------------------------------------------
 
@@ -198,8 +198,12 @@ class Simulator:
             self._rng = random.Random(self._seed)
             self._init_world()
 
-    def _init_world(self) -> None:
-        db.clear(self._conn)
+    def _init_world(self, *, keep_incident_log: bool = False) -> None:
+        if keep_incident_log:
+            db.clear(self._conn, db.WORLD_TABLES)
+            db.drop_unfinished_incidents(self._conn)
+        else:
+            db.clear(self._conn)
         rng = self._rng
         now = int(self._clock.now())
         self._last_step = now - now % STEP_SIM_S
@@ -489,8 +493,13 @@ class Simulator:
                 )
 
             onset = int(self._clock.now())
-            count = self._conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
-            incident_id = f"INC-{count + 1 + self._id_offset:03d}"
+            # Next after both the kept incident log and memory (IDs never repeat).
+            logged = [
+                int(r[0][4:])
+                for r in self._conn.execute("SELECT id FROM incidents")
+                if str(r[0]).startswith("INC-") and str(r[0])[4:].isdigit()
+            ]
+            incident_id = f"INC-{max([self._id_offset, *logged]) + 1:03d}"
             fault = _Fault(
                 incident_id=incident_id,
                 spec=spec,
