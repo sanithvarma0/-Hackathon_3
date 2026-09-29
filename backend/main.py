@@ -4,7 +4,9 @@ Interactive API docs (OpenAPI) at /docs. Every refusal is a structured JSON erro
 `{"code", "message"}` and also an `error` event on the stream — never a stack trace.
 """
 
+import hmac
 import time
+from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any, Literal
@@ -110,8 +112,10 @@ async def live_service(settings: Settings) -> MemoryOpsService:
     return MemoryOpsService(settings, sim=sim, conn=conn, clock=clock, agent_factory=factory)
 
 
-def create_app(service_factory: ServiceFactory = live_service) -> FastAPI:
-    settings = get_settings()
+def create_app(
+    service_factory: ServiceFactory = live_service, settings: Settings | None = None
+) -> FastAPI:
+    settings = settings or get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -129,6 +133,38 @@ def create_app(service_factory: ServiceFactory = live_service) -> FastAPI:
         description="Self-learning production incident commander powered by Hindsight memory.",
         lifespan=lifespan,
     )
+    # Registered before CORS so CORS stays outermost: refusals still carry CORS headers and
+    # the browser shows the structured error instead of a CORS failure.
+    trigger_times: deque[float] = deque()
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next: Callable[[Request], Awaitable[Any]]) -> Any:
+        if request.method != "POST" or not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        if settings.demo_passcode:
+            given = request.headers.get("x-demo-passcode", "")
+            if not hmac.compare_digest(given.encode(), settings.demo_passcode.encode()):
+                return JSONResponse(
+                    status_code=401,
+                    content={"code": "PASSCODE_REQUIRED", "message": "enter the demo passcode"},
+                )
+        if request.url.path.startswith(
+            ("/api/incident/predefined", "/api/incident/random", "/api/incident/custom")
+        ):
+            now = time.monotonic()
+            while trigger_times and now - trigger_times[0] > 3600:
+                trigger_times.popleft()
+            if len(trigger_times) >= settings.trigger_limit_per_hour:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "code": "RATE_LIMITED",
+                        "message": f"at most {settings.trigger_limit_per_hour} incidents per hour",
+                    },
+                )
+            trigger_times.append(now)
+        return await call_next(request)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

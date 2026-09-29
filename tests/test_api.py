@@ -43,8 +43,10 @@ def current_incident_scope(incident_id: str) -> Iterator[None]:
 class Rig:
     """One app, one service, one world — plus a scripted LLM whose decisions tests choose."""
 
-    def __init__(self, conn: Any = None, decisions: list[str] | None = None) -> None:
-        self.settings = Settings(_env_file=None)
+    def __init__(
+        self, conn: Any = None, decisions: list[str] | None = None, **overrides: Any
+    ) -> None:
+        self.settings = Settings(_env_file=None, **overrides)
         self.conn = conn or connect(":memory:")
         self.clock = ManualClock(START)
         self.sim = Simulator(self.conn, self.clock, seed=5)
@@ -93,7 +95,7 @@ class Rig:
         self.service = MemoryOpsService(
             self.settings, sim=self.sim, conn=self.conn, clock=self.clock, agent_factory=factory
         )
-        self.app = create_app()
+        self.app = create_app(settings=self.settings)
         self.app.state.service = self.service
         self.http = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=self.app), base_url="http://test"
@@ -456,3 +458,42 @@ async def test_eval_latest_serves_the_committed_report_or_a_clear_404(rig: Rig, 
     body = (await rig.http.get("/api/eval/latest")).json()
     assert body["run_id"] == "20260929-abc" and body["summary"] == {"targets": []}
     assert "rows" not in body  # the summary only: rows stay in the committed file
+
+
+# ---- public deployment guard (docs/DEPLOY.md) ----------------------------------------------
+
+
+async def test_passcode_guards_actions_but_not_reading():
+    rig = Rig(demo_passcode="letmein")
+    await rig.service.start()
+    try:
+        assert (await rig.http.get("/api/state")).status_code == 200
+        body = {"type": "config_regression", "machine": "M3"}
+        r = await rig.http.post("/api/incident/predefined", json=body)
+        assert r.status_code == 401 and r.json()["code"] == "PASSCODE_REQUIRED"
+        r = await rig.http.post(
+            "/api/incident/predefined", json=body, headers={"X-Demo-Passcode": "wrong"}
+        )
+        assert r.status_code == 401
+        r = await rig.http.post("/api/admin/reset", json={})
+        assert r.status_code == 401
+        r = await rig.http.post(
+            "/api/incident/predefined", json=body, headers={"X-Demo-Passcode": "letmein"}
+        )
+        assert r.status_code == 200
+    finally:
+        await rig.service.stop()
+        await rig.http.aclose()
+
+
+async def test_trigger_rate_limit():
+    rig = Rig(trigger_limit_per_hour=1)
+    await rig.service.start()
+    try:
+        body = {"type": "config_regression", "machine": "M3"}
+        assert (await rig.http.post("/api/incident/predefined", json=body)).status_code == 200
+        r = await rig.http.post("/api/incident/random", json={})
+        assert r.status_code == 429 and r.json()["code"] == "RATE_LIMITED"
+    finally:
+        await rig.service.stop()
+        await rig.http.aclose()

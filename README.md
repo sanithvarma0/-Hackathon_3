@@ -66,6 +66,10 @@ curl localhost:8000/api/usage                                         # tokens +
 
 API reference: `http://localhost:8000/docs`.
 
+## Deploy
+
+Backend on Render (Docker, persistent disk, `render.yaml`) and UI on Vercel (root `frontend`), with a demo passcode and a trigger rate limit protecting spend. Local fallback: `docker compose up --build`. Full steps in [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Phase 0.5 spikes
 
 ```bash

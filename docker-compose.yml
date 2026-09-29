@@ -1,0 +1,30 @@
+# Local / fallback deployment: `docker compose up --build`, then open http://localhost:3000.
+# Secrets come from .env (never committed). docs/DEPLOY.md
+services:
+  backend:
+    build: .
+    env_file: .env
+    environment:
+      SQLITE_PATH: /data/memoryops.db
+      USAGE_DB_PATH: /data/usage.db
+      CORS_ORIGINS: '["http://localhost:3000"]'
+    ports: ["8000:8000"]
+    volumes: [memoryops-data:/data]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/state')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE: http://localhost:8000
+    ports: ["3000:3000"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  memoryops-data:

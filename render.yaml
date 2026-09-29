@@ -1,0 +1,59 @@
+# Render Blueprint for the MemoryOps backend. docs/DEPLOY.md
+# Secrets (sync: false) are entered in the Render dashboard, never committed.
+services:
+  - type: web
+    name: memoryops-api
+    runtime: docker
+    plan: starter            # always-on: the simulator and SSE stream run in-process; a disk needs a paid plan
+    region: singapore
+    branch: claude/youthful-archimedes-ocdu48
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/state
+    numInstances: 1          # one process owns the plant simulation
+    disk:
+      name: memoryops-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: SQLITE_PATH
+        value: /data/memoryops.db
+      - key: USAGE_DB_PATH
+        value: /data/usage.db
+      - key: HINDSIGHT_BASE_URL
+        value: https://api.hindsight.vectorize.io
+      - key: HINDSIGHT_BANK_LIVE
+        value: memoryops-demo
+      - key: HINDSIGHT_BANK_SEEDED
+        value: memoryops-demo-seeded
+      - key: LLM_PRIMARY_PROVIDER
+        value: openai
+      - key: LLM_PRIMARY_MODEL
+        value: gpt-5.4-mini
+      - key: OPENAI_REASONING_EFFORT
+        value: none
+      - key: LLM_FALLBACK_PROVIDER
+        value: groq
+      - key: LLM_FALLBACK_MODEL
+        value: openai/gpt-oss-120b
+      - key: GROQ_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: LANGFUSE_HOST
+        value: https://us.cloud.langfuse.com
+      - key: LLM_SPEND_CAP_USD
+        value: "10"
+      - key: TRIGGER_LIMIT_PER_HOUR
+        value: "40"
+      - key: CORS_ORIGINS        # JSON list, e.g. ["https://memoryops.vercel.app"]
+        sync: false
+      - key: DEMO_PASSCODE
+        sync: false
+      - key: HINDSIGHT_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false

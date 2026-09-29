@@ -36,19 +36,50 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// The public deployment asks for a demo passcode on every action (docs/DEPLOY.md).
+const PASSCODE_KEY = "memoryops.passcode";
+
+function storedPasscode(): string {
+  try {
+    return localStorage.getItem(PASSCODE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function askPasscode(): string | null {
+  if (typeof window === "undefined") return null;
+  const given = window.prompt("This demo is protected. Enter the demo passcode:");
+  if (!given) return null;
+  try {
+    localStorage.setItem(PASSCODE_KEY, given);
+  } catch {
+    // private window: the passcode lasts for this request only
+  }
+  return given;
+}
+
+async function request<T>(path: string, init?: RequestInit, passcode = storedPasscode()): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       cache: "no-store",
       ...init,
-      headers: { "content-type": "application/json", ...init?.headers },
+      headers: {
+        "content-type": "application/json",
+        ...(passcode ? { "x-demo-passcode": passcode } : {}),
+        ...init?.headers,
+      },
     });
   } catch {
     throw new ApiError(0, "BACKEND_UNREACHABLE", `Cannot reach the backend at ${API_BASE}`);
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    if (body.code === "PASSCODE_REQUIRED") {
+      const given = askPasscode();
+      if (given) return request<T>(path, init, given);
+    }
     if (typeof body.code === "string") throw new ApiError(res.status, body.code, body.message);
     if (res.status === 422) throw new ApiError(422, "INVALID_REQUEST", "The request was rejected");
     throw new ApiError(res.status, "HTTP_ERROR", `HTTP ${res.status}`);

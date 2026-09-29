@@ -59,8 +59,15 @@ class Settings(BaseSettings):
     max_attempts: int = 3
     sqlite_path: Path = REPO_ROOT / "data" / "memoryops.db"
 
-    # CORS for the Next.js dev server
+    # CORS: the Next.js dev server locally; the Vercel URL(s) in production (JSON list in env)
     cors_origins: list[str] = ["http://localhost:3000"]
+
+    # Public deployment guard (docs/DEPLOY.md). Empty passcode = open (local development).
+    # With a passcode, reading the plant and the stream stays open; every action (trigger,
+    # approve, ignore, reset) needs the X-Demo-Passcode header, so a public URL can't spend
+    # the LLM / Hindsight credits. The trigger limit caps incidents per rolling hour.
+    demo_passcode: str = ""
+    trigger_limit_per_hour: int = Field(40, ge=1)
 
 
 @lru_cache
