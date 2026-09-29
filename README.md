@@ -14,7 +14,7 @@
 | Article | https://dev.to/bunny0711/the-fix-wasnt-in-the-logs-hindsight-remembered-it-28b0 |
 | Video (3:59) | https://youtu.be/g4Yi_GZhfNI |
 | LinkedIn post | https://www.linkedin.com/feed/update/urn:li:activity:7510646908323921920/ |
-| Reddit | https://www.reddit.com/r/LLMDevs/comments/1wt6ooh/my_incident_agent_escalated_once_then_fixed_the/ |
+| Reddit | https://www.reddit.com/r/SideProject/comments/1wt6stk/my_incident_agent_escalated_once_then_fixed_the/ |
 | Eval report | [docs/eval/20260929-062025-06ac955/REPORT.md](docs/eval/20260929-062025-06ac955/REPORT.md) |
 | Demo walkthrough | [docs/DEMO.md](docs/DEMO.md) |
 
