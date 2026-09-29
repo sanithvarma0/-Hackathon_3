@@ -1,6 +1,6 @@
 # MemoryOps
 
-[![CI](https://github.com/sanithvarma0/-Hackathon_3/actions/workflows/ci.yml/badge.svg?branch=claude/youthful-archimedes-ocdu48)](https://github.com/sanithvarma0/-Hackathon_3/actions/workflows/ci.yml)
+[![CI](https://github.com/sanithvarma0/memoryops/actions/workflows/ci.yml/badge.svg?branch=claude/youthful-archimedes-ocdu48)](https://github.com/sanithvarma0/memoryops/actions/workflows/ci.yml)
 
 **A self-learning production incident commander.** A simulated 5-machine factory develops incidents. A single LangGraph agent investigates them with real tools, recommends a fix, and waits for a human to approve it. Every resolution is retained in [Hindsight](https://hindsight.vectorize.io) memory, so the next incident of the same kind is diagnosed faster and fixed right the first time. That includes incidents whose fix *cannot* be read off the signals and is known only to the plant's engineers.
 

@@ -18,7 +18,7 @@ The narration below is a guide, not a teleprompter. Say it your way.
 
 **On screen:** your face (webcam), then the MemoryOps floor view with the machines ticking.
 
-> "Hi, I'm [YOUR NAME]. This is MemoryOps, an incident agent for a production line. It investigates a fault, recommends a fix, and waits for a human to approve it. The interesting part is what happens with problems it can't solve from the data. I'll show you how it learns them from the engineers, using Hindsight as its memory."
+> "Hi, I'm Sanith. This is MemoryOps, an incident agent for a production line. It investigates a fault, recommends a fix, and waits for a human to approve it. The interesting part is what happens with problems it can't solve from the data. I'll show you how it learns them from the engineers, using Hindsight as its memory."
 
 ## 0:30–1:00 · The problem: the fix isn't in the telemetry
 

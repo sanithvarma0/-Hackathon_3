@@ -11,21 +11,13 @@ Everything the content guide asks for, drafted from this repo and the live deplo
 | Reddit link post plus first comment | [reddit.md](reddit.md) | once is enough |
 | Video script, 5 titles, thumbnail prompt (Prompt 5/6) | [video.md](video.md) | one per team |
 
-## Step 0: rename the GitHub repo (do this first)
+## Step 0: repo renamed ✓
 
-The repo is called `-Hackathon_3`. The guide disqualifies any article or post that mentions "hackathon", and both have to link the repo.
-
-1. On GitHub, go to **Settings → General → Repository name** and change it to `memoryops`.
-2. GitHub redirects the old URL, and Render and Vercel follow the rename. Still, open https://memoryops.vercel.app and https://memoryops-api.onrender.com/api/health afterwards to check.
-3. Tell me once it's done. I'll update the README badge and links to the new name.
-
-All links in these drafts already use `github.com/sanithvarma0/memoryops`.
-
-Optional: two files in the repo root have "Hackathon" in their names (the guide and the problem statement). Judges may not mind, but you could move them out of the public repo before promoting it.
+The repo is now `github.com/sanithvarma0/memoryops`. The live site, the API and the article images were all checked after the rename.
 
 ## Order of operations
 
-1. **Rename the repo** (step 0), and push the latest `main`, which I do. The article's images load from `raw.githubusercontent.com/.../main/docs/content/img/`.
+1. The article's images load from `raw.githubusercontent.com/sanithvarma0/memoryops/main/docs/content/img/`, which was checked after the rename.
 2. **Publish the article** on Dev.to, Hashnode or Medium, as a public post.
    - **Dev.to / Hashnode:** paste `article.md` as-is. The markdown and image URLs work directly.
    - **Medium:** paste it, then check that the code blocks and images came through. Re-upload the images from `img/` if they didn't.
@@ -48,7 +40,7 @@ Optional: two files in the repo root have "Hackathon" in their names (the guide 
 - [x] At least one honest lesson, limitation or dead end: the silent zero-match run, recall@1 at 65%, 7 of 69 false replays, and the INC-004 replay.
 - [x] Screenshots and images included: the architecture diagram, the memory browser, and the eval chart.
 - [ ] Published to a public, linkable URL. This one's yours.
-- [ ] The word "hackathon" appears nowhere, including the repo URL and hashtags. It's clear once step 0 is done.
+- [x] The word "hackathon" appears nowhere, including the repo URL and hashtags.
 - [ ] LinkedIn: repo link in the main post, article URL as the first comment, Hindsight repo as a comment.
 - [ ] Reddit: a link post in one of the four listed subreddits.
 - [ ] Video: 2–5 min, 1080p, public on YouTube, with the thumbnail.
