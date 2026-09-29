@@ -208,6 +208,7 @@ async def _run_incident(
         matches=matches,
         first_recommendation=final.get("first_action_recommended"),
         memory_tool_calls=final.get("memory_tool_calls", 0),
+        memory_gate=final.get("memory_gate"),
         engineer_action=closed.engineer_action,
         cited=final.get("first_cited_incidents") or [],
         trace_url=result.trace_url,

@@ -42,7 +42,13 @@ async def recall_hints(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
     deps.emit(
         "memory_hints",
         incident_id,
-        {"query": query, "hints": hints, "runbook": runbook, "matches": len(recall.matches)},
+        {
+            "query": query,
+            "hints": hints,
+            "runbook": runbook,
+            "matches": len(recall.matches),
+            "gate": recall.gate,
+        },
     )
     return {"hints": hints, "runbook": runbook}
 
@@ -85,7 +91,12 @@ async def search_memory(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
     deps.emit(
         "memory_results",
         incident_id,
-        {"query": query, "matches": matches, "learned_patterns": list(recall.learned_patterns)},
+        {
+            "query": query,
+            "matches": matches,
+            "learned_patterns": list(recall.learned_patterns),
+            "gate": recall.gate,
+        },
     )
     update = {
         "memory_query": query,
@@ -95,4 +106,5 @@ async def search_memory(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
     if first_attempt:
         update["memory_hit"] = bool(matches)
         update["first_memory_results"] = matches
+        update["memory_gate"] = recall.gate
     return update

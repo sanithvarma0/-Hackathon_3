@@ -539,6 +539,16 @@ resp = client.recall(
 
 Output to state: `memory_results = [{incident_id, rank, rerank, similarity, summary, final_action, outcome}]`, `learned_patterns = [str]`.
 
+### 6.3b When Hindsight's reranker is unavailable (added in Phase 5)
+
+On 2026-09-29 Hindsight Cloud started returning `scores.reranker: null` for every result, with an empty `reranked` stage in the recall trace and `final` encoding only rank position (1.1, 0.902, 0.704 … — a fixed step per rank). Hindsight documents `reranker` as null "when the deployment uses a passthrough reranker (RRF/interleave modes)". The reranker-based gate then rejected every candidate and **memory silently stopped matching**: a full 144-incident eval ran with no memory hits at all (`docs/eval/20260929-053727-5de93f7`, kept and labelled invalid — it is effectively memory OFF vs OFF, a useful noise floor).
+
+What the memory layer does now (`backend/memory/hindsight.py`, `judge.py`):
+- **Scores present** → the reranker gate (6.3), gate = `reranker`.
+- **No scores** → the top 5 past incidents in Hindsight's rank order (still meaningful) are rated by the agent's LLM for "same signature" (0–1; the question a cross-encoder answers); ≥ 0.5 matches, ≥ 0.75 is *strong*. Gate = `llm_judge`; the call is ledgered as step `memory_judge`.
+- **Judge fails** → the top 2 in rank order, marked *weak*. Gate = `rank_only`. Never silence.
+- The gate is on every `memory_hints` / `memory_results` event, in each eval row, in the UI's memory panel ("Hindsight reranker unavailable — matches checked by the LLM"), and summarised in the eval report. The report also prints **MEMORY NEVER MATCHED** when memory-ON incidents with same-class priors never match — the check that would have caught the invalid run.
+
 ### 6.4 Memory Toggle Semantics
 
 The toggle's value is sent with each incident trigger (`memory_enabled`) and stored on the incident.

@@ -21,12 +21,18 @@ class MemoryMatch(BaseModel):
     facts: tuple[str, ...]
 
 
+# How the matches were gated: Hindsight's cross-encoder (normal), an LLM relevance check when
+# the cross-encoder is unavailable, or rank order alone when that failed too (memory/judge.py).
+Gate = Literal["reranker", "llm_judge", "rank_only"]
+
+
 class MemoryRecall(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     query: str
     matches: tuple[MemoryMatch, ...]
     learned_patterns: tuple[str, ...]
+    gate: Gate = "reranker"
 
 
 class MemoryRecord(BaseModel):

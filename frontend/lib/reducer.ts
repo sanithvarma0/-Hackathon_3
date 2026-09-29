@@ -60,6 +60,7 @@ export interface IncidentRun {
   hintsQuery: string | null;
   matches: MemoryMatch[];
   searched: boolean; // search_memory ran (or was skipped) this attempt
+  memoryGate: string | null; // "reranker" normally; "llm_judge" / "rank_only" when degraded
   learnedPatterns: string[];
   memorySkipped: boolean;
   recommendation: Recommendation | null;
@@ -147,6 +148,7 @@ export function newRun(id: string, view: IncidentView | null): IncidentRun {
     hintsQuery: null,
     matches: [],
     searched: false,
+    memoryGate: null,
     learnedPatterns: [],
     memorySkipped: false,
     recommendation: null,
@@ -400,7 +402,7 @@ export function applyEvent(state: UIState, e: BusEvent): UIState {
       const matches = (Array.isArray(d.matches) ? d.matches : []) as MemoryMatch[];
       const learned = Array.isArray(d.learned_patterns) ? d.learned_patterns.map(str) : [];
       run = pushTrace(
-        { ...run, matches, learnedPatterns: learned, searched: true },
+        { ...run, matches, learnedPatterns: learned, searched: true, memoryGate: typeof d.gate === "string" ? d.gate : run.memoryGate },
         { ts: e.ts, kind: "memory", text: matches.length ? `matched ${matches.map((m) => `${m.incident_id} (${m.strength})`).join(", ")}` : "no matching past incident" },
         e.id,
       );

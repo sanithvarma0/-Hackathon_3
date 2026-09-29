@@ -113,6 +113,13 @@ def summarize(rows: list[Row], *, expected_units: int | None = None) -> dict[str
                 for m in METRICS
             },
         }
+    gates: dict[str, int] = defaultdict(int)
+    for r in cond["memory_on"]:
+        gates[str(r.get("memory_gate") or "unknown")] += 1
+    # Sanity check: memory ON with same-class priors should match *something* sometimes. A run
+    # where it never does has a broken memory layer (as when Hindsight's reranker went away).
+    primed = [r for r in cond["memory_on"] if r["prior_same_class"]]
+    never_matched = bool(primed) and not any(r["matches"] for r in primed)
     memory_tool = {
         "incidents_using_it": sum(1 for r in cond["memory_on"] if r.get("memory_tool_calls")),
         "n": len(cond["memory_on"]),
@@ -282,6 +289,8 @@ def summarize(rows: list[Row], *, expected_units: int | None = None) -> dict[str
         "by_exposure": by_exposure,
         "by_family": by_family,
         "memory_tool": memory_tool,
+        "memory_gates": dict(gates),
+        "memory_never_matched": never_matched,
         "per_class": per_class,
         "paired_overall": paired_overall,
         "transfer": transfer,
@@ -435,6 +444,23 @@ def markdown(summary: dict[str, Any], meta: dict[str, Any]) -> str:
         f"`{meta.get('llm_primary')}` · {meta.get('started_at')}"
     )
     w("")
+    if s.get("memory_never_matched"):
+        w(
+            "> ⚠️ **MEMORY NEVER MATCHED.** No memory-ON incident got a single match although "
+            "same-class incidents were in memory. The memory layer was not working in this run; "
+            "its memory-ON results measure the agent without memory. Do not use this run to "
+            "judge memory."
+        )
+        w("")
+    gates = s.get("memory_gates") or {}
+    degraded = {k: v for k, v in gates.items() if k not in ("reranker", "unknown", "None")}
+    if degraded:
+        w(
+            "> Memory matches in this run were gated without Hindsight's cross-encoder "
+            f"(passthrough reranker): {', '.join(f'{k} ×{v}' for k, v in degraded.items())} of "
+            f"{sum(gates.values())} memory-ON incidents (BUILD_PLAN 6.3b)."
+        )
+        w("")
     w("## Acceptance targets (BUILD_PLAN 11.5)")
     w("")
     w("| # | Target | Result | Evidence |")

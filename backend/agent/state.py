@@ -23,6 +23,7 @@ class AgentState(TypedDict, total=False):
     learned_patterns: list[str]
     memory_hit: bool
     first_memory_results: list[dict[str, Any]]
+    memory_gate: str | None  # how the first memory search was gated (memory/store.py Gate)
     # decision
     recommendation: dict[str, Any]
     first_recommendation: dict[str, Any]

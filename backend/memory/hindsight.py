@@ -9,7 +9,8 @@ from typing import Any
 
 from hindsight_client import Hindsight
 
-from backend.memory.store import MemoryMatch, MemoryRecall, MemoryRecord
+from backend.memory.judge import Judge
+from backend.memory.store import Gate, MemoryMatch, MemoryRecall, MemoryRecord
 from backend.usage import UsageLedger, estimate_tokens
 
 INCIDENT_PATTERNS_ID = "incident-patterns"
@@ -89,6 +90,47 @@ def apply_match_rule(
     return matches
 
 
+JUDGE_CANDIDATES = 5  # top-ranked past incidents the fallback judge looks at
+JUDGE_MIN = 0.5  # fallback gate: judged probability of the same signature
+JUDGE_STRONG = 0.75
+RANK_ONLY_KEEP = 2  # last resort (no scores, judge failed): the top two, marked weak
+
+
+def rank_candidates(
+    facts: list[Any], *, exclude_incident: str | None = None, limit: int = JUDGE_CANDIDATES
+) -> list[dict[str, Any]]:
+    """Past incidents in Hindsight's rank order (used when there are no reranker scores)."""
+    by_incident: dict[str, dict[str, Any]] = {}
+    for f in facts:
+        md = f.metadata or {}
+        inc = md.get("incident_id")
+        if not inc or inc == exclude_incident:
+            continue
+        c = by_incident.setdefault(inc, {"incident_id": inc, "facts": [], "md": md, "sim": None})
+        if md.get("record_kind") == "episode":
+            c["md"] = md
+        c["facts"].append(f.text)
+        sem = getattr(f.scores, "semantic", None) if f.scores is not None else None
+        if sem is not None:
+            c["sim"] = sem if c["sim"] is None else max(c["sim"], sem)
+    return list(by_incident.values())[:limit]
+
+
+def _match(c: dict[str, Any], rank: int, score: float, strength: str) -> MemoryMatch:
+    md = c["md"]
+    return MemoryMatch(
+        incident_id=c["incident_id"],
+        rank=rank,
+        rerank=round(score, 4),
+        similarity=None if c["sim"] is None else round(float(c["sim"]), 4),
+        strength="strong" if strength == "strong" else "weak",
+        diagnosis=md.get("diagnosis"),
+        final_action=md.get("final_action"),
+        outcome=md.get("outcome"),
+        facts=tuple(c["facts"][:4]),
+    )
+
+
 class HindsightMemory:
     def __init__(
         self,
@@ -98,9 +140,11 @@ class HindsightMemory:
         rel_rerank: float,
         min_rerank: float,
         ledger: UsageLedger | None = None,
+        judge: Judge | None = None,
     ) -> None:
         self._client = client
         self._ledger = ledger
+        self._judge = judge
         self.bank_id = bank_id
         self._rel = rel_rerank
         self._floor = min_rerank
@@ -174,15 +218,47 @@ class HindsightMemory:
             )
         facts = [r for r in resp.results if r.type in ("world", "experience")]
         observations = tuple(r.text for r in resp.results if r.type == "observation")[:5]
+        scored = any(f.scores is not None and f.scores.reranker is not None for f in facts)
+        gate: Gate = "reranker"
+        if scored or not facts:
+            matches = apply_match_rule(
+                facts, rel=self._rel, floor=self._floor, exclude_incident=exclude_incident
+            )
+        else:
+            matches, gate = await self._fallback_gate(query, facts, exclude_incident)
         return MemoryRecall(
-            query=query,
-            matches=tuple(
-                apply_match_rule(
-                    facts, rel=self._rel, floor=self._floor, exclude_incident=exclude_incident
-                )
-            ),
-            learned_patterns=observations,
+            query=query, matches=tuple(matches), learned_patterns=observations, gate=gate
         )
+
+    async def _fallback_gate(
+        self, query: str, facts: list[Any], exclude_incident: str | None
+    ) -> tuple[list[MemoryMatch], Gate]:
+        """No cross-encoder scores (passthrough reranker): judge the top-ranked candidates."""
+        candidates = rank_candidates(facts, exclude_incident=exclude_incident)
+        if not candidates:
+            return [], "llm_judge"
+        if self._judge is not None:
+            try:
+                scores = await self._judge(query, candidates)
+            except Exception:  # the judge is best effort; fall through to rank order
+                scores = None
+            if scores is not None:
+                kept = sorted(
+                    (c for c in candidates if scores.get(c["incident_id"], 0.0) >= JUDGE_MIN),
+                    key=lambda c: -scores[c["incident_id"]],
+                )
+                return [
+                    _match(
+                        c,
+                        i + 1,
+                        scores[c["incident_id"]],
+                        "strong" if scores[c["incident_id"]] >= JUDGE_STRONG else "weak",
+                    )
+                    for i, c in enumerate(kept)
+                ], "llm_judge"
+        return [
+            _match(c, i + 1, 0.0, "weak") for i, c in enumerate(candidates[:RANK_ONLY_KEEP])
+        ], "rank_only"
 
     async def runbook(self) -> str | None:
         try:

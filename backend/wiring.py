@@ -15,6 +15,7 @@ from backend.agent.runner import AgentRunner
 from backend.config import Settings
 from backend.llm import build_llm
 from backend.memory.hindsight import HindsightMemory
+from backend.memory.judge import llm_judge
 from backend.memory.outbox import MemoryWriter
 from backend.observability import Tracer, build_tracer
 from backend.simulator import Simulator
@@ -53,18 +54,20 @@ async def build_live_agent(
     hindsight = Hindsight(
         base_url=settings.hindsight_base_url, api_key=settings.hindsight_api_key, timeout=120
     )
+    llm = build_llm(settings, traced=tracer.enabled, ledger=ledger)
     memory = HindsightMemory(
         hindsight,
         bank_id,
         rel_rerank=settings.memory_match_rel_rerank,
         min_rerank=settings.memory_match_min_rerank,
         ledger=ledger,
+        judge=llm_judge(llm),  # only used when Hindsight returns no reranker scores
     )
     await memory.ensure_bank()
     deps = AgentDeps(
         adapter=SimulatorAdapter(sim, executed_by=executed_by),
         lifecycle=SimulatorLifecycle(sim),
-        llm=build_llm(settings, traced=tracer.enabled, ledger=ledger),
+        llm=llm,
         memory=memory,
         writer=MemoryWriter(conn, memory),
         tracer=tracer,

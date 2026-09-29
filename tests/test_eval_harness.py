@@ -195,3 +195,12 @@ def test_full_battery_reports_both_families_and_the_safe_metric(tmp_path: Path):
     safe = summary["by_family"]["site_knowledge"]["by_exposure"]["safe"]["1st"]["memory_on"]
     assert safe["mean"] == 0  # a wrong fix applied, not a hand-over: unsafe
     assert "By family" in (tmp_path / "REPORT.md").read_text()
+
+
+def test_report_warns_loudly_when_memory_never_matched(two_seeds, tmp_path: Path):
+    rows = [dict(r, matches=[]) for r in two_seeds[0]]  # as if the memory layer were dead
+    summary = write_report(tmp_path, rows, {"run_id": "t", "units_completed": 4}, expected_units=4)
+    assert summary["memory_never_matched"]
+    assert "MEMORY NEVER MATCHED" in (tmp_path / "REPORT.md").read_text()
+    healthy = write_report(tmp_path / "ok", two_seeds[0], {"run_id": "t"}, expected_units=None)
+    assert not healthy["memory_never_matched"]

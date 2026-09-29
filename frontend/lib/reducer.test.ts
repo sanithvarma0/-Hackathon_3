@@ -169,6 +169,16 @@ describe("memory mid-investigation", () => {
   });
 });
 
+describe("degraded memory", () => {
+  it("records how matches were gated so the panel can say so", () => {
+    const s = live(initialState, [
+      ev("incident_triggered", { incident: view }),
+      ev("memory_results", { matches: [], learned_patterns: [], gate: "llm_judge" }),
+    ]);
+    expect(s.incident!.memoryGate).toBe("llm_judge");
+  });
+});
+
 describe("replay and reconnects", () => {
   it("replaying stored events restores the same state without toasts", () => {
     const events = [...configRegression(), ev("memory_written", { document_id: "INC-001", text: "t" })];

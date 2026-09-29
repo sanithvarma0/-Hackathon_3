@@ -71,6 +71,11 @@ export default function MemoryPanel({
             )}
           </div>
         )}
+        {run.memoryGate && run.memoryGate !== "reranker" && (
+          <p className="font-mono text-[11px] text-degraded" title="Hindsight returned no cross-encoder scores (passthrough reranker)">
+            ▲ Hindsight reranker unavailable — {run.memoryGate === "llm_judge" ? "matches checked by the LLM" : "matches in rank order only"}
+          </p>
+        )}
         {run.learnedPatterns.length > 0 && (
           <div>
             <Label>Learned patterns</Label>

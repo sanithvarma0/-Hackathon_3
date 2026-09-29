@@ -199,6 +199,7 @@ async def _recall(deps: AgentDeps, incident_id: str, raw_args: str | None) -> To
             "matches": matches,
             "learned_patterns": list(recall.learned_patterns),
             "stage": "investigate",
+            "gate": recall.gate,
         },
     )
     return ToolResult(

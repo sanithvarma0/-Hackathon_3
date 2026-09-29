@@ -163,6 +163,7 @@ async def learn(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             "first_cited_incidents": first.get("cited_incidents", []),
             "memory_hit": state.get("memory_hit", False),
             "first_memory_results": state.get("first_memory_results", []),
+            "memory_gate": state.get("memory_gate"),
             "episode_status": status,
         }
     }
