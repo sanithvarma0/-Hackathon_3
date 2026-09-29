@@ -60,6 +60,11 @@ from backend.simulator.machines import FEEDS, GATEWAYS, LINE, MACHINES, format_v
 STEP_SIM_S = 10
 BACKFILL_DAYS = 7
 BACKFILL_STEP_SIM_S = 900
+# World history older than this is pruned (checked every sim hour) so a long-running
+# deployment's disk stays bounded. The agent's tools look back at most a day; the backfill
+# and sparklines cover 7 days. Incidents, actions and memory are never pruned.
+RETENTION_SIM_S = 8 * 86400
+PRUNE_EVERY_SIM_S = 3600
 # Every controller runs a firmware integrity check every night (routine, so its presence is
 # never a giveaway): 02:00 UTC plus a per-machine offset.
 FIRMWARE_CHECK_S = 2 * 3600
@@ -207,6 +212,7 @@ class Simulator:
         rng = self._rng
         now = int(self._clock.now())
         self._last_step = now - now % STEP_SIM_S
+        self._last_prune = self._last_step
         self._fault: _Fault | None = None
         self._baseline: dict[str, _Baseline] = {}
         self._jitter: dict[str, dict[str, float]] = {}
@@ -306,7 +312,17 @@ class Simulator:
                 stepped = True
             if stepped:
                 self._write_machines()
+                if self._last_step - self._last_prune >= PRUNE_EVERY_SIM_S:
+                    self.prune_history(self._last_step)
                 self._conn.commit()
+
+    def prune_history(self, now: int) -> None:
+        """Delete machine history, events and logs older than the retention window."""
+        with self._lock:
+            cutoff = now - RETENTION_SIM_S
+            for table in ("machine_history", "events", "logs"):
+                self._conn.execute(f"DELETE FROM {table} WHERE ts < ?", (cutoff,))  # noqa: S608
+            self._last_prune = now
 
     def _step(self, t: int) -> None:
         fault = self._fault

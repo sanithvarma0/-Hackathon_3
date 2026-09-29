@@ -482,3 +482,19 @@ def test_escalated_site_incidents_carry_the_engineers_knowledge(incident_type, f
     world.adapter.execute_action(incident.id, "ESCALATE_HUMAN")
     closed = world.sim.get_incident(incident.id)
     assert closed.engineer_action == fix and words in (closed.engineer_note or "")
+
+
+def test_world_history_is_pruned_past_retention_but_incidents_are_kept(world):
+    from backend.simulator.engine import PRUNE_EVERY_SIM_S, RETENTION_SIM_S
+
+    conn = world.conn
+    oldest = lambda t: conn.execute(f"SELECT MIN(ts) FROM {t}").fetchone()[0]  # noqa: E731
+    incident_id = world.sim.trigger_incident("config_regression", "M3").id
+    world.advance(PRUNE_EVERY_SIM_S + 60)  # crosses a prune check
+    now = int(world.clock.now())
+    for table in ("machine_history", "events", "logs"):
+        assert oldest(table) >= now - RETENTION_SIM_S - PRUNE_EVERY_SIM_S - 60
+    assert world.sim.get_incident(incident_id).id == incident_id
+    world.sim.prune_history(now + RETENTION_SIM_S + 1)  # everything is now past retention
+    assert conn.execute("SELECT COUNT(*) FROM machine_history").fetchone()[0] == 0
+    assert world.sim.get_incident(incident_id).id == incident_id
