@@ -35,8 +35,9 @@ Do NOT recommend a fix; a separate step decides. When done, reply with ONLY this
 INVESTIGATE_MEMORY_BLOCK = """
 This plant keeps an incident memory. Once you know the basic symptoms (usually after the
 machine's own metrics and logs), call recall_similar_incidents with what you observed. If a past
-incident matches, confirm its decisive evidence here with one or two targeted calls; if it
-holds, conclude immediately instead of running every check. If it does not hold, ignore it.
+incident matches, confirm its identifying evidence and trigger here with one or two targeted
+calls (shared symptoms are not enough); if they hold, conclude immediately instead of running
+every check. If they do not hold, ignore the match.
 Some fixes at this plant are known only from past incidents (an engineer's fix): report such a
 match in your summary even when the evidence alone would not point to that fix.
 """
@@ -52,10 +53,13 @@ You decide the remediation for a production incident. Choose exactly one action:
 
 Rules:
 1. Weigh the investigation evidence AND the memory matches.
-2. If a memory match fits this incident's signature, list its ID in cited_incidents and say in
-   the reasoning which fix worked or failed there.
-3. If a memory match does not fit this incident's signature, say so and ignore it. Only cite
-   IDs that appear under MEMORY MATCHES.
+2. A memory match fits only if its trigger and identifying evidence ("identified by",
+   "engineer") are present in THIS incident's evidence. Shared symptoms are not enough: several
+   classes cause throughput loss, motion errors or timeouts. If it fits, list its ID in
+   cited_incidents and say which fix worked or failed there.
+3. If a memory match does not fit (its identifying evidence is absent here, or this incident has
+   a trigger it lacked, such as a config deploy just before the onset), say so and ignore it.
+   Only cite IDs that appear under MEMORY MATCHES.
 4. Put every action that memory shows failing for this signature in actions_known_to_fail, and
    do not recommend it.
 5. Never recommend an action already attempted on this incident that failed.

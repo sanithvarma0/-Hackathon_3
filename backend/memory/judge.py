@@ -19,9 +19,12 @@ Judge = Callable[[str, list[dict[str, Any]]], Awaitable[dict[str, float]]]
 JUDGE_SYSTEM = """\
 You check whether past factory incidents are the same kind of incident as a new one.
 For each candidate, give the probability (0 to 1) that it has the same signature as the new
-incident: the same kind of symptoms, trigger and identifying evidence. Generic overlap such as
-"output dropped" or the same machine is not enough. Different incident classes that merely share
-a symptom must score low.
+incident. Judge by the TRIGGER and the IDENTIFYING EVIDENCE (what changed before the onset, what
+the investigation or the engineer found), not by symptoms: different incident classes share
+symptoms (throughput loss, motion or servo errors, timeouts). If the candidate was identified by
+evidence the new incident does not show, or the new incident shows a trigger the candidate did
+not have (for example a config deploy just before the onset versus none), score it low.
+Generic overlap such as "output dropped" or the same machine is not enough.
 Reply with ONLY this JSON object: {"scores": {"<incident id>": <0..1>, ...}}"""
 
 
