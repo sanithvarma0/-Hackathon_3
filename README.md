@@ -2,7 +2,7 @@
 
 **A self-learning production incident commander.** A simulated 5-machine factory develops incidents; a single LangGraph agent investigates, recommends a fix, and — through [Hindsight](https://hindsight.vectorize.io) memory — resolves recurring incident classes faster and more accurately every time.
 
-> Status: **Phase 4 done** — the control-room UI: live plant floor with per-class visual signatures, streaming investigation trace, purple memory panel, human-in-the-loop recommendation card, Memory Browser with the self-written runbook, Learning tab; verified in a real browser against live services (BUILD_PLAN.md 14.1e). 193 backend + 15 frontend tests. See [BUILD_PLAN.md](BUILD_PLAN.md) for the full specification and [TECH_STACK.md](TECH_STACK.md) for the stack and decision log.
+> Status: **Phase 5 done** — a paired memory ON/OFF evaluation on the live stack (`make eval`, reports in [`docs/eval/`](docs/eval/)). On incidents whose fix is known only from a past resolution, memory ON is right **+46 points** more often (95% CI +25 to +67), with 8.3 fewer tool calls and 15 fewer sim-minutes to recover; on textbook incidents it does no harm. 3 of 6 acceptance targets pass; the misses are reported with their causes (BUILD_PLAN.md 14.1f). 277 backend + 17 frontend tests. See [BUILD_PLAN.md](BUILD_PLAN.md) for the full specification and [TECH_STACK.md](TECH_STACK.md) for the stack and decision log.
 
 ## Prerequisites
 
@@ -27,6 +27,15 @@ cd frontend && npm install  # frontend deps
 | ![](docs/screenshots/network-failure-1440.png) | ![](docs/screenshots/memory-browser.png) | ![](docs/screenshots/learning.png) |
 
 Screenshots from a real session against live services (BUILD_PLAN.md 14.1e) — including the incident where memory misled the agent.
+
+## Evaluation
+
+```bash
+make eval-quick   # 1 seed x 18 incidents x memory ON/OFF, ~15 min, ~$1.5
+make eval         # 3 seeds x 24 incidents x memory ON/OFF, ~45 min, ~$5 (LLM + Hindsight)
+```
+
+Each run writes `docs/eval/<date>-<sha>/REPORT.md` (targets PASS/FAIL, learning by exposure with 95% CIs, per family and class, transfer, discrimination, retrieval, calibration, cost, every failure with a Langfuse trace link), `results.json` and charts. The Learning tab shows the latest. CI runs the same pipeline with a fake LLM and fake memory.
 
 ## Run
 

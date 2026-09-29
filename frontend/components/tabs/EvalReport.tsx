@@ -179,7 +179,15 @@ export default function EvalReport({ report }: { report: EvalLatest }) {
       </div>
 
       <div className="grid grid-cols-3 gap-3 font-mono text-[12px]">
-        <Fact label="False replays (memory ON)" value={`${s.discrimination.memory_on.probes.k} / ${s.discrimination.memory_on.probes.n} probes`} sub={`memory OFF: ${s.discrimination.memory_off.probes.k} / ${s.discrimination.memory_off.probes.n}`} />
+        <Fact
+          label="Other-class fix recommended (target 4)"
+          value={`ON ${s.discrimination.memory_on.probes.k} / ${s.discrimination.memory_on.probes.n} · OFF ${s.discrimination.memory_off.probes.k} / ${s.discrimination.memory_off.probes.n}`}
+          sub={
+            s.discrimination.memory_on.memory_induced
+              ? `memory-induced (a matched incident's fix): ${s.discrimination.memory_on.memory_induced.k} / ${s.discrimination.memory_on.memory_induced.n}`
+              : ""
+          }
+        />
         <Fact
           label="Retrieval recall@1"
           value={s.retrieval.recall_at_1 ? `${pct(s.retrieval.recall_at_1.mean)} (n=${s.retrieval.recall_at_1.n})` : "—"}

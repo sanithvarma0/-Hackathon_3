@@ -1,4 +1,7 @@
-# MemoryOps — Build Specification v2.0
+# MemoryOps — Build Specification v2.1
+
+> **v2.1 changes (Phase 5 built — the evaluation suite):** paired memory ON/OFF evaluation on the live stack (11.6), Hindsight spend tracked (7.6). Measured, not assumed (14.1f): on textbook incidents the agent is right without memory, so memory has nothing to add — two **site-knowledge** incident classes were added (5.4b) and the agent got a **mid-investigation memory tool** (7.3). Hindsight Cloud switched to a **passthrough reranker** overnight and memory silently stopped matching; the memory layer now detects that and falls back to an LLM relevance check (6.3b), and the report flags runs where memory never matched. Final full run: memory ON is right on site-knowledge incidents **+46 points** more often (CI +25 to +67), with 8.3 fewer tool calls and 15.3 fewer sim-minutes; no harm on textbook incidents; 3 of 6 targets pass, and the three misses are reported with their causes.
+>
 
 > **v2.0 changes (Phase 4 built — the control room):** the UI state is one pure reducer over the SSE events, so a reloaded page rebuilds exactly what a watching page shows (replay → snapshot → stream from `last_event_id`); any disconnect repeats that boot and shows the designed offline state. Visual incident signatures are driven by **observable metrics only** (config version, temperature, sensor variance, memory, packet loss), never by the hidden class; thresholds come from the simulator's ranges. Purple is honest: a fix that failed *in this incident* is amber, only fixes memory knew about are purple; skipped memory touchpoints are grey. shadcn/ui dropped (a dozen hand-rolled components were smaller than the dependency). Backend additions: `GET /api/plant/history` (sparkline backfill), `?since=` on the stream, `last_event_id` in `/api/state`. **Two restart bugs found by UI testing and fixed:** event IDs could go backwards after a restart (ticks consumed IDs but were not persisted) and sim time restarted at wall-clock time (behind the ×10 sim), so new episodes could predate old ones. **Live finding:** a memory-driven false replay (14.1e) — the eval suite's `false_replay` metric exists for exactly this.
 >
@@ -1064,7 +1067,7 @@ Numbers in brackets are placeholders, filled from Phase 5 measurements.
 
 **Phase 4 — Frontend. ✔ DONE** (15 frontend + 193 backend tests; live UI session 14.1e; the seeded-history beat waits for Phase 6). ✅ Full demo script (Section 12) runs end-to-end in the browser, including memory toggle, re-degradation animation, and reset.
 
-**Phase 5 — Evaluation suite.** ✅ `make eval --quick` runs end-to-end on live services; full run completes (with `--resume` if interrupted); `docs/eval/<run>/REPORT.md` committed with PASS/FAIL against 11.5; harness covered in CI with fakes; Learning tab reads `results.json`.
+**Phase 5 — Evaluation suite. ✔ DONE** (5 runs, 14.1f; latest full report `docs/eval/20260929-062025-06ac955`; 3 of 6 targets pass — the misses are reported, not tuned away). ✅ `make eval --quick` runs end-to-end on live services; full run completes (with `--resume` if interrupted); `docs/eval/<run>/REPORT.md` committed with PASS/FAIL against 11.5; harness covered in CI with fakes; Learning tab reads `results.json`.
 
 **Phase 6 — Seeded history.** ✅ `fixtures/seed_history.jsonl` generated and committed (~48 episodes, contradictions, escalations); `make seed` loads it; **[LOAD 6-MONTH OPS HISTORY]** switches banks; Memory Browser + Learning tab show the history.
 
@@ -1160,18 +1163,50 @@ Total $0.1003 for 118,926 tokens. Anecdotes, not results (n = 7, one seed, one r
 - **Runbook contamination.** After INC-005, Hindsight's Incident Patterns model listed ROLLBACK_CONFIG as an ineffective fix for the *control-loop* class — the lesson from a misdiagnosed incident was attributed to the class it was mistaken for.
 - Candidate mitigations for Phase 5, each to be judged by `false_replay`, `top_match_same_class` and accuracy with CIs: require the matched episode's decisive evidence to hold now (e.g. deploy timing relative to onset) before citing it; an absolute reranker floor for "strong"; lessons keyed to the diagnosed-and-verified class only.
 
+### 14.1f Phase 5 evaluation runs (2026-09-28/29, `make eval`, `gpt-5.4-mini`, fast-forward clock)
+
+Every number below is from a committed report in `docs/eval/`. Runs in order, each motivated by the previous one:
+
+| Run | Battery · size | What changed | Result |
+|---|---|---|---|
+| `20260928-193803-c380d38-quick` | textbook · 1 seed × 12 | first run | **24/24 correct ON and OFF** — no headroom for memory on textbook incidents; tool calls ON − OFF −0.2 [−1.0, +0.5]; recall@1 100% (Hindsight reranker); 0/11 false replays. $0.67 |
+| `20260929-053727-5de93f7` | textbook · 3 seeds × 24 | full baseline | **INVALID — memory never matched** (Hindsight Cloud passthrough reranker, 6.3b). Kept and labelled: effectively memory OFF vs OFF, a noise floor (accuracy difference +3% [0%, +7%]). $3.12 |
+| `20260929-055836-15637b2-quick` | full · 1 seed × 18 | site-knowledge classes (5.4b), memory tool (7.3), LLM-judge fallback gate (6.3b) | site knowledge at 2nd–3rd exposure ON 4/4 vs OFF 1/4; but recall@1 58%, 2/17 false replays — the judge saw only Hindsight's generic extracted facts. $1.33 |
+| `20260929-060951-915683f-quick` | full · 1 seed × 18 | episodes carry signature, deciding evidence and engineer note as metadata | recall@1 83%; target 2 passes (3rd+: tool calls −2.0 [−3.5, −0.3], MTTR −5.6 min [−14.1, −0.8]); one false replay repeated (config regression matched a servo-drift episode on shared motion symptoms). $1.48 |
+| **`20260929-062025-06ac955`** (latest) | full · 3 seeds × 24 | match by trigger and identifying evidence, not symptoms | see below. $5.26 |
+
+**Final run, 144 incident runs, paired by seed and position:**
+
+| | Memory ON | Memory OFF | ON − OFF (paired, 95% CI) |
+|---|---|---|---|
+| Site knowledge, accuracy, all exposures | — | — | **+46%** [+25%, +67%] (n=24) |
+| Site knowledge, accuracy at 2nd / 3rd+ exposure | 83% / 75% | 0% / 33% | +83% / +42% [+8%, +75%] |
+| Site knowledge, tool calls / MTTR, all exposures | — | — | **−8.3** [−12.0, −4.7] / **−15.3 min** [−23.6, −7.1] |
+| Textbook, accuracy, all exposures (no-harm check) | — | — | +0% [−6%, +6%] (n=48) |
+| Textbook, tool calls, all exposures | — | — | −0.9 [−1.6, −0.1] |
+| All, 3rd+ exposure: accuracy · tool calls · MTTR | 92% · — · 12.7 min | 78% · — · 19.0 min | +14% [+0%, +28%] · −3.9 [−6.2, −1.9] · −6.3 min [−11.3, −2.1] |
+| Brier score of stated confidence | 0.103 | 0.212 | — |
+
+Targets (11.5): 1 ❌ (+14%, CI lower bound exactly 0 — "excludes 0" requires > 0) · 2 ✅ · 3 ✅ · 4 ❌ (7/69 other-class fixes with memory; 16/69 without — of the 7, **4 are memory-induced**, i.e. the wrong fix is a matched other-class incident's fix; the target's definition was not changed) · 5 ❌ (recall@1 65% [51%, 76%] under the LLM-judge fallback — every memory-ON incident but three ran without Hindsight's cross-encoder) · 6 ✅.
+
+What the misses mean and what is not done about them yet:
+- **Retrieval (5) and memory-induced replays (4)** share a cause: the fallback judge accepts other-class incidents that share symptoms (e.g. a vision dropout matched to a sensor drift at 0.97). The design fix belongs in the memory layer; further prompt tuning on these same three seeds would be fitting to the test, so the next step is to re-run when Hindsight's cross-encoder is back and to validate any judge change on new seeds.
+- **Accuracy (1)** is carried by the site-knowledge family; textbook incidents are at the ceiling with or without memory (that is target 6's "no harm" doing its job).
+- The agent asked memory mid-investigation in 71 of 72 memory-ON incidents; on textbook incidents memory ON costs slightly more real time (23.4 s vs 18.4 s per incident) for fewer tool calls.
+
 ### 14.2 Still to be measured
 
 | Item | Initial value | Set by |
 |---|---|---|
 | `MEMORY_MATCH_REL_RERANK` / `MEMORY_MATCH_MIN_RERANK` | 0.15 / 0.05 (from 14.1) | Re-checked by the eval suite's retrieval metrics (11.3) |
-| Eval throughput and cost | Resolved by the OpenAI switch: ~15 s and ~$0.011 per incident (14.1c) → full battery (144 incident runs) ≈ $1.6 and well under an hour, estimated from measured averages | Confirmed by the first `make eval --quick` (Phase 5) |
-| MTTR cost model for fast-forward mode | none yet: no sim time passes during LLM calls, so eval MTTR ≈ detection + verify window | Phase 5: charge fixed sim-seconds per tool call / LLM call and document it (5.1) |
+| Eval throughput and cost | **Measured (14.1f):** full battery 144 incident runs ≈ 45 min at parallel 3; $2.22 LLM + $3.04 Hindsight (est.); memory ON costs $0.043/incident vs $0.030 OFF | Done |
+| MTTR cost model for fast-forward mode | **Defined (11.6):** 35 sim-s per tool call (measured 3.5 s real per tool call × SIM_SPEED 10), human approval 0 | Done |
+| Hindsight cross-encoder availability | Passthrough since 2026-09-29 (6.3b); every full-battery result above used the LLM-judge fallback | Re-run `make eval` when `scores.reranker` returns; compare retrieval (target 5) |
 | `SIM_SPEED` | 10 | Phase 4 demo rehearsal |
 | `VERIFY_WINDOW_SIM_S` | 180 | Phase 1 (must exceed max re-degrade delay) |
 | `ESCALATION_PENALTY_SIM_S` | 1800 | Phase 1 |
-| Calibrated-confidence formula weights | TBD | Phase 5 eval (chosen to minimize Brier score on a held-out seed) |
-| Headline MTTR / accuracy / confidence numbers | placeholders | Phase 5 eval report |
+| Calibrated-confidence formula weights | Not fitted: `calibrated_confidence` still equals the model's stated confidence. Measured Brier: ON 0.103, OFF 0.212 (14.1f) | Fit on a held-out seed (4) once the reranker question is settled, so the fit is not tuned on the seeds it is judged on |
+| Headline MTTR / accuracy / confidence numbers | **Measured (14.1f)** | Done |
 
 ---
 

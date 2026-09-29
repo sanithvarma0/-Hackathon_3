@@ -1,7 +1,9 @@
-# 🔒 TECH STACK — FROZEN (v2.0)
+# 🔒 TECH STACK — FROZEN (v2.1)
 
 All decisions are locked. This is the definitive reference for the rest of the hackathon. BUILD_PLAN.md is the implementation spec; this file is the "what and why".
 
+> **v2.1 changes (Phase 5):** `matplotlib` (dev group) renders the eval charts; the statistics are dependency-free Python (bootstrap, Wilson, Brier). Hindsight Cloud's cross-encoder went to passthrough mode during Phase 5; the memory layer falls back to an LLM relevance check through the same OpenAI client (BUILD_PLAN 6.3b), so no new service was added.
+>
 > **v2.0 changes (Phase 4):** shadcn/ui and lucide-react dropped — the handful of components the control room needs (modal, switch, segmented control, toast) are hand-rolled with Tailwind v4 tokens, and icons are text glyphs (● ▲ ✖ ↻ ◆) so no state depends on colour alone and nothing loads from a CDN. Recharts 3 for the Learning tab. Vitest 5 tests the UI reducer (`npm test`, in CI with `tsc --noEmit`).
 >
 > **v1.8 changes:** LLM primary switched from Groq to **OpenAI `gpt-5.4-mini`** after measuring Groq's free-tier limit (8,000 tokens/min) as the cause of the only failed dry runs; Groq `gpt-oss-120b` stays as a cross-provider fallback. Gemini evaluated and rejected (503 on every current model). Added a persistent usage ledger with per-call tokens and cost, and a hard spend cap.
@@ -156,6 +158,8 @@ Keep this — you'll need it for the *"Explanation of how Hindsight memory is us
 | One global SSE stream | Opened once at page load: no subscribe race, trivial reconnect with replay |
 | Environment adapter boundary | The agent sees six typed methods; the simulator is one implementation — the production answer to "how would this work on real infrastructure?" (ADR-0003) |
 | Measured evaluation suite | Every number we show comes from a committed, reproducible report; paired ON/OFF with CIs, not anecdotes |
+| Paired ON/OFF evaluation on identical incidents | Same seeds, same incident specs, fresh bank per unit: the only difference is memory, so the difference is memory's |
+| Graceful degradation when a vendor feature disappears | Hindsight's reranker went to passthrough overnight; we detect it per recall, fall back, show it in the UI and report — and a check in the report flags runs where memory never matched |
 | One pure reducer over the SSE stream | A reloaded page replays stored events through the same code a watching page runs, so both show the same state — tested |
 | Visual signatures from observable metrics only | The floor never reveals what the agent must diagnose; random/custom incidents stay hidden until closed |
 | Seeded history from simulator facts + LLM narrative | Realistic and internally consistent; kept out of eval banks so it can't inflate learning curves |

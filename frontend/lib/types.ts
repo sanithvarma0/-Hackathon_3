@@ -226,7 +226,7 @@ export interface EvalSummary {
   by_family?: Partial<Record<"textbook" | "site_knowledge", { n: Record<string, number>; by_exposure: EvalExposureTable }>>;
   memory_tool?: { incidents_using_it: number; n: number; mean_calls: number | null };
   targets: EvalTarget[];
-  discrimination: Record<"memory_on" | "memory_off", { probes: { k: number; n: number } }>;
+  discrimination: Record<"memory_on" | "memory_off", { probes: { k: number; n: number }; memory_induced?: { k: number; n: number } }>;
   retrieval: { recall_at_1: EvalEstimate | null; strong_precision: EvalEstimate | null };
   calibration: Record<"memory_on" | "memory_off", { brier: number | null }>;
   totals: { llm_usd: number; hindsight_usd: number; incidents: number };

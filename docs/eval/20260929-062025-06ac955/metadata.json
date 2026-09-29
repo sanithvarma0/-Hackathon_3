@@ -42,5 +42,10 @@
     "langgraph": "1.2.12",
     "langfuse": "4.15.6",
     "fastapi": "0.141.1"
-  }
+  },
+  "finished_at": "2026-09-29T06:40:50+00:00",
+  "wall_clock_s": 1225,
+  "failed_units": [],
+  "eval_spend_usd": 5.2635,
+  "units_completed": 6
 }

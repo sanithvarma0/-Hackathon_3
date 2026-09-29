@@ -22,6 +22,7 @@ from backend.eval.stats import (
     reliability,
     wilson,
 )
+from backend.simulator.incidents import CORRECT_FIX
 
 Row = dict[str, Any]
 BUCKETS = ("1st", "2nd", "3rd+")
@@ -94,6 +95,17 @@ def exposure_table(cond: dict[str, list[Row]]) -> dict[str, dict[str, dict[str, 
                 "diff": _est(paired(_by_pair(on, metric), _by_pair(off, metric))),
             }
     return table
+
+
+def memory_induced(r: Row) -> bool:
+    """A wrong first recommendation that is the fix of a matched incident of another class."""
+    if r["recommendation_correct"]:
+        return False
+    return any(
+        m.get("type") not in (None, r["true_type"])
+        and CORRECT_FIX.get(m["type"]) == r.get("first_recommendation")
+        for m in r.get("matches") or []
+    )
 
 
 def summarize(rows: list[Row], *, expected_units: int | None = None) -> dict[str, Any]:
@@ -174,14 +186,19 @@ def summarize(rows: list[Row], *, expected_units: int | None = None) -> dict[str
     }
 
     # Discrimination: could a fix be replayed from another class? (memory has another class)
+    # `false_replay` (the target, as specified in 11.1) counts any other class's fix, which also
+    # catches plain wrong guesses — memory OFF scores on it too. `memory_induced` is the
+    # diagnostic: the wrong fix is exactly the fix of a matched incident of another class.
     discrimination: dict[str, Any] = {}
     for c in CONDS:
         probes = [r for r in cond[c] if r["prior_other_class"]]
         sd = [r for r in cond[c] if r["after_config_regression"]]
+        induced = sum(1 for r in probes if memory_induced(r))
         discrimination[c] = {
             "probes": {"k": sum(r["false_replay"] for r in probes), "n": len(probes)},
             "rate": _est(wilson(sum(r["false_replay"] for r in probes), len(probes))),
             "sensor_after_config": {"k": sum(r["false_replay"] for r in sd), "n": len(sd)},
+            "memory_induced": {"k": induced, "n": len(probes)},
         }
 
     # Retrieval (memory ON only): is the top match the same class, when one exists?
@@ -573,12 +590,20 @@ def markdown(summary: dict[str, Any], meta: dict[str, Any]) -> str:
     w("")
     for c in CONDS:
         d = s["discrimination"][c]
+        mi = d.get("memory_induced", {"k": 0, "n": 0})
         w(
             f"- **{c}**: {d['probes']['k']} false replays in {d['probes']['n']} probes (incidents "
             f"where memory already held another class; rate {fmt_rate(d['rate'])}); sensor drift "
             f"right after a config regression: {d['sensor_after_config']['k']} / "
-            f"{d['sensor_after_config']['n']}."
+            f"{d['sensor_after_config']['n']}; memory-induced (the wrong fix is a matched "
+            f"other-class incident's fix): {mi['k']} / {mi['n']}."
         )
+    w("")
+    w(
+        "`false_replay` (target 4, as specified) counts any other class's fix, so it also counts "
+        "wrong guesses made without memory — see the memory OFF row. *Memory-induced* is the "
+        "narrower diagnostic of memory misleading the agent; it does not change target 4's verdict."
+    )
     w("")
     w("## Retrieval quality (memory ON)")
     w("")

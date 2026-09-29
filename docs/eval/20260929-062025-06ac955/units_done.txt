@@ -1,0 +1,6 @@
+memory_off-s1
+memory_on-s1
+memory_on-s2
+memory_off-s2
+memory_off-s3
+memory_on-s3
