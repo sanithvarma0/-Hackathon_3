@@ -11,7 +11,12 @@ The backend runs the plant simulator continuously, so the page is live the momen
   - **LIVE** is green.
   - **MEMORY** is ON.
   - **ALERTS** is 0.
-- If an incident is still open from someone else, approve its recommendation, or wait. Only one incident runs at a time.
+- Only one incident runs at a time, and everyone watching sees it.
+  - While one is open, every viewer's trigger buttons grey out with the tooltip "INC-… is active — one incident at a time".
+  - A racing click gets a clean "INC-… is still open" message.
+  - If someone else's incident is open, approve its recommendation or wait for it to close.
+  - These were checked live with two separate browsers.
+- The **MEMORY** toggle is per browser (saved in that browser). Turning it OFF on your laptop doesn't change it for judges, but it stays OFF on your laptop until you turn it back ON.
 - Limits: 40 new incidents per hour, and a $10 cap on LLM spend. One incident costs about $0.01–0.05.
 
 ## The story in one line
@@ -43,6 +48,8 @@ Point at the result card, which shows time to recover (MTTR), tool calls, and "f
 1. Flip **MEMORY** to OFF in the top bar.
 2. Click **VISION DROPOUT** again. The same evidence comes in, but there are no purple steps; the memory tool isn't even offered.
 3. The agent can't know about the PoE port, so it escalates or guesses. Approve whatever it recommends.
+   - In the rehearsal (INC-007, memory OFF), it guessed RESTART_MACHINE, which had no effect. It then tried RESTART_GATEWAY, so it needed two attempts.
+   - With memory ON (INC-005), it recommended RESTART_GATEWAY first time.
 4. Flip **MEMORY** back ON afterwards.
 
 **Why this matters:** memory OFF still *retains* the episode. It only removes recall. That is what makes the ON vs OFF comparison fair.
