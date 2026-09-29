@@ -30,6 +30,10 @@ Code: github.com/sanithvarma0/memoryops
 
 ---
 
+## Media: attach the clip, not an image
+
+Attach `img/linkedin-clip.mp4`: 35 s, 1080p, captioned, no audio needed. LinkedIn autoplays native video muted in the feed, so the captions carry the story. It's a real run on the live deployment (INC-010): the memory tab with INC-002's escalation, then a new vision dropout, memory matches INC-002/INC-005, the agent recommends RESTART GATEWAY citing INC-002, a human approves, and the recovery is verified. `img/linkedin-clip.gif` (14.7 MB) is a fallback only; the MP4 looks much sharper.
+
 ## First comment: the article
 
 > I wrote up the full build, including the day my memory layer silently returned zero matches: https://dev.to/bunny0711/the-fix-wasnt-in-the-logs-hindsight-remembered-it-28b0
