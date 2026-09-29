@@ -16,7 +16,13 @@ export const PREDEFINED = [
   { type: "network_failure", label: "Network failure" },
   { type: "resource_exhaustion", label: "Resource exhaustion" },
 ] as const;
-export type IncidentType = (typeof PREDEFINED)[number]["type"] | "ambiguous";
+// Site knowledge (BUILD_PLAN 5.4b): the fix can't be read off the signals, only learned from a
+// past resolution, so this is where memory visibly changes the outcome.
+export const SITE_KNOWLEDGE = [
+  { type: "vision_link_dropout", label: "Vision dropout", hint: "camera link drops; the fix is known only to the plant's engineers" },
+  { type: "servo_tuning_drift", label: "Servo drift", hint: "servo tuning goes stale; the fix is known only to the plant's engineers" },
+] as const;
+export type IncidentType = (typeof PREDEFINED)[number]["type"] | (typeof SITE_KNOWLEDGE)[number]["type"] | "ambiguous";
 
 export type MachineStatus = "healthy" | "degraded" | "critical" | "recovering";
 

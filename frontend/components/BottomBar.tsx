@@ -1,6 +1,6 @@
 "use client";
 
-import { PREDEFINED } from "@/lib/types";
+import { PREDEFINED, SITE_KNOWLEDGE } from "@/lib/types";
 
 export type Tab = "floor" | "memory" | "learning";
 
@@ -38,14 +38,25 @@ export default function BottomBar({
           {p.label.toUpperCase()}
         </button>
       ))}
+      <span className="ml-2 mr-0.5 whitespace-nowrap font-mono text-[10px] tracking-widest text-memory" title="Incidents whose fix only the plant's engineers know: the first one escalates, memory lets the agent fix the next one itself">
+        ◆ SITE
+      </span>
+      {SITE_KNOWLEDGE.map((p) => (
+        <button
+          key={p.type}
+          disabled={busy}
+          title={why ?? `Inject a ${p.label.toLowerCase()}: ${p.hint}`}
+          onClick={() => onPredefined(p.type)}
+          className={`${base} border-memory/50 bg-panel-2 text-text hover:border-memory`}
+        >
+          {p.label.toUpperCase()}
+        </button>
+      ))}
       <button disabled={busy} title={why ?? "Build an incident from signals — the class stays hidden"} onClick={onCustom} className={`${base} border-border text-text hover:border-muted`}>
         CUSTOM…
       </button>
       <button disabled={busy} title={why ?? "A random incident class on a random machine — hidden until it closes"} onClick={onRandom} className={`${base} border-recovering/60 text-recovering hover:bg-recovering/10`}>
         SURPRISE ME
-      </button>
-      <button disabled title="The seeded 6-month operations history arrives in Phase 6" className={`${base} border-memory/50 text-memory`}>
-        ◆ 6-MONTH HISTORY
       </button>
 
       <nav className="ml-auto flex rounded-md border border-border p-0.5" aria-label="Views">

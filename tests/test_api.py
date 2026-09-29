@@ -497,3 +497,10 @@ async def test_trigger_rate_limit():
     finally:
         await rig.service.stop()
         await rig.http.aclose()
+
+
+async def test_site_knowledge_incidents_can_be_triggered(rig: Rig):
+    r = await rig.http.post("/api/incident/predefined", json={"type": "servo_tuning_drift"})
+    assert r.status_code == 200 and r.json()["type"] == "servo_tuning_drift"
+    r = await rig.http.post("/api/incident/predefined", json={"type": "ambiguous"})
+    assert r.status_code == 422 and r.json()["code"] == "INVALID_TYPE"

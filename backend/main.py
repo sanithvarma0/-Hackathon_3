@@ -20,7 +20,14 @@ from sse_starlette.sse import EventSourceResponse
 from backend.agent.deps import Emit, WaitSim
 from backend.config import Settings, get_settings
 from backend.health import HealthReport, check_all
-from backend.schemas import PREDEFINED_TYPES, Action, CustomIncidentSpec, IncidentType, Metric
+from backend.schemas import (
+    PREDEFINED_TYPES,
+    SITE_KNOWLEDGE_TYPES,
+    Action,
+    CustomIncidentSpec,
+    IncidentType,
+    Metric,
+)
 from backend.service import (
     AgentHandle,
     IncidentView,
@@ -223,7 +230,7 @@ def create_app(
 
     @app.post("/api/incident/predefined", response_model=IncidentView, tags=["incidents"])
     async def predefined(body: PredefinedRequest, request: Request) -> IncidentView:
-        if body.type not in PREDEFINED_TYPES:
+        if body.type not in PREDEFINED_TYPES + SITE_KNOWLEDGE_TYPES:
             raise ServiceError(422, "INVALID_TYPE", "use the custom builder for other incidents")
         return svc(request).trigger(
             source="predefined",
