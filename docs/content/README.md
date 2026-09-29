@@ -42,7 +42,10 @@ The repo is now `github.com/sanithvarma0/memoryops`. The live site, the API and 
 - [x] Published to a public, linkable URL: https://dev.to/bunny0711/the-fix-wasnt-in-the-logs-hindsight-remembered-it-28b0
 - [x] The word "hackathon" appears nowhere, including the repo URL and hashtags.
 - [x] LinkedIn: https://www.linkedin.com/feed/update/urn:li:activity:7510646908323921920/ (repo link in the post, Code.in tagged, video attached, article URL and Hindsight repo as comments)
-- [x] Reddit: https://www.reddit.com/r/LLMDevs/comments/1wt6ooh/my_incident_agent_escalated_once_then_fixed_the/ (link post, first comment by the author)
+- [ ] Reddit: link posts submitted and held by karma filters, with mods asked to approve:
+  - https://www.reddit.com/r/LLMDevs/comments/1wt6ooh/my_incident_agent_escalated_once_then_fixed_the/ (Reddit spam filter)
+  - r/AIMemory (AutoModerator: 50-karma minimum)
+  - https://www.reddit.com/r/SideProject/comments/1wt6stk/my_incident_agent_escalated_once_then_fixed_the/ (removed)
 - [ ] Video: 2–5 min, 1080p, public on YouTube, with the thumbnail.
 
 ## Teams
