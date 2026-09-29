@@ -15,6 +15,12 @@ from backend.usage import UsageLedger, estimate_tokens
 
 INCIDENT_PATTERNS_ID = "incident-patterns"
 
+
+def is_placeholder(content: str) -> bool:
+    """Hindsight's answer while a mental model is (re)generating."""
+    return content.strip().lower().startswith("generating content")
+
+
 MISSION = (
     "I am a production incident responder for a 5-machine factory. I learn from every incident "
     "resolution to diagnose faster and more accurately."
@@ -276,7 +282,27 @@ class HindsightMemory:
         content = getattr(model, "content", None)
         if self._ledger is not None and content:
             self._ledger.record_memory(op="mm_retrieve", billed_tokens=estimate_tokens(content))
-        return content or None
+        if not content or is_placeholder(content):
+            return None  # never inject Hindsight's "Generating content..." into a prompt
+        return str(content)
+
+    async def observations(self, limit: int = 12) -> list[str]:
+        """Hindsight's consolidated observations: what the runbook is built from. Shown in
+        its place when the mental model has no content (observed on Hindsight Cloud on
+        2026-09-29: every refresh completes but leaves the placeholder)."""
+        resp = await self._client.arecall(
+            bank_id=self.bank_id,
+            query=RUNBOOK_QUERY,
+            types=["observation"],
+            budget="mid",
+            max_tokens=2048,
+        )
+        texts = [r.text for r in resp.results if r.type == "observation"][:limit]
+        if self._ledger is not None:
+            self._ledger.record_memory(
+                op="recall", billed_tokens=sum(estimate_tokens(t) for t in texts)
+            )
+        return texts
 
     async def retain(self, record: MemoryRecord) -> None:
         resp = await self._client.aretain(

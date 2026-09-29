@@ -115,7 +115,10 @@ export const api = {
   act: (id: string, action: Action) => post(`/api/incident/${id}/action`, { action }),
   ignore: (id: string) => post(`/api/incident/${id}/ignore`),
   memoryRecords: () => request<MemoryRecord[]>("/api/memory/records"),
-  runbook: () => request<{ bank_id: string; content: string | null }>("/api/memory/runbook"),
+  runbook: () =>
+    request<{ bank_id: string; content: string | null; source?: "mental_model" | "observations" | null; observations?: string[] }>(
+      "/api/memory/runbook",
+    ),
   metrics: () => request<MetricsRow[]>("/api/metrics"),
   evalLatest: () => request<EvalLatest>("/api/eval/latest"),
   usage: () => request<UsageResponse>("/api/usage"),

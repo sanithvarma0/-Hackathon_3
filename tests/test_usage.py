@@ -251,3 +251,13 @@ async def test_retain_recall_and_runbook_reads_record_billed_estimates():
     await memory.runbook()
     ops = dict(ledger.rows("SELECT op, billed_tokens FROM memory_usage"))
     assert ops == {"retain_episode": 500, "recall": 100, "mm_retrieve": 14}  # ~4 chars/token
+
+
+async def test_placeholder_runbook_is_not_content_and_observations_stand_in():
+    from backend.memory.hindsight import HindsightMemory
+
+    client = FakeHindsightClient()
+    client.content = "Generating content...\n"  # Hindsight Cloud, 2026-09-29
+    memory = HindsightMemory(client, "bank", rel_rerank=0.15, min_rerank=0.05)  # type: ignore[arg-type]
+    assert await memory.runbook() is None  # never injected into the agent's prompt
+    assert await memory.observations() == ["x" * 400]

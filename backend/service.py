@@ -275,7 +275,19 @@ class MemoryOpsService:
     async def runbook(self) -> dict[str, Any]:
         memory = self.agent.memory
         content = await memory.runbook() if memory is not None else None
-        return {"bank_id": self.bank_id, "content": content}
+        observations: list[str] = []
+        if memory is not None and content is None:
+            try:
+                observations = await memory.observations()
+            except Exception:  # the fallback is best effort, like the runbook itself
+                observations = []
+        source = "mental_model" if content else ("observations" if observations else None)
+        return {
+            "bank_id": self.bank_id,
+            "content": content,
+            "source": source,
+            "observations": observations,
+        }
 
     def usage(self) -> dict[str, Any]:
         ledger = self.agent.ledger

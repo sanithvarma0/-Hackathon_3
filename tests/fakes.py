@@ -137,6 +137,11 @@ class FakeMemory:
     async def runbook(self) -> str | None:
         return None
 
+    async def observations(self, limit: int = 12) -> list[str]:
+        return [
+            f"{r.incident_id}: {r.metadata.get('diagnosis', '')}" for r in self.records.values()
+        ][:limit]
+
     async def retain(self, record: MemoryRecord) -> None:
         if self.fail_retain:
             raise ConnectionError("hindsight unreachable")

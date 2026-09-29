@@ -47,6 +47,9 @@ export default function MemoryBrowser({
   // Hindsight answers with a placeholder while the mental model is being (re)built.
   const consolidating = !!rawRunbook && /^generating content/i.test(rawRunbook.trim());
   const runbookText = consolidating ? null : rawRunbook;
+  // Hindsight's consolidated observations: what the runbook is built from, shown in its place
+  // while the mental model has no content (backend/memory/hindsight.py `observations`).
+  const observations = runbookText ? [] : (runbook.data?.observations ?? []);
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4 p-4">
@@ -126,6 +129,21 @@ export default function MemoryBrowser({
         <div className={`scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-3 ${runbookLive ? "memory-in" : ""}`} key={runbookLive?.ts ?? "static"}>
           {runbookText ? (
             <Markdownish text={runbookText} />
+          ) : observations.length ? (
+            <div>
+              <p className="mb-3 text-xs text-muted">
+                Hindsight hasn&apos;t generated the mental model&apos;s text yet, so these are the{" "}
+                <span className="text-memory">observations it consolidated</span> across incidents, which the runbook is built from.
+              </p>
+              <ul className="space-y-2">
+                {observations.map((o, i) => (
+                  <li key={i} className="flex gap-2 text-sm leading-5 text-text">
+                    <span className="text-memory">◆</span>
+                    <span>{o}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : consolidating ? (
             <p className="text-sm text-memory">◆ Hindsight is consolidating the latest episodes into the runbook…</p>
           ) : (

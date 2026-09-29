@@ -276,7 +276,22 @@ async def test_usage_reports_spend_and_cap(rig: Rig):
 
 async def test_memory_records_and_runbook(rig: Rig):
     assert (await rig.http.get("/api/memory/records")).json() == []
-    assert (await rig.http.get("/api/memory/runbook")).json()["content"] is None
+    body = (await rig.http.get("/api/memory/runbook")).json()
+    assert body["content"] is None and body["source"] is None and body["observations"] == []
+
+
+async def test_runbook_falls_back_to_consolidated_observations(rig: Rig):
+    incident_id = (
+        await rig.http.post(
+            "/api/incident/predefined", json={"type": "config_regression", "machine": "M3"}
+        )
+    ).json()["id"]
+    await rig.until_awaiting(incident_id)
+    await rig.http.post(f"/api/incident/{incident_id}/action", json={"action": "ROLLBACK_CONFIG"})
+    await rig.service.drain()
+    body = (await rig.http.get("/api/memory/runbook")).json()
+    assert body["content"] is None and body["source"] == "observations"
+    assert body["observations"] and body["observations"][0].startswith(incident_id)
 
 
 async def test_reset_with_wipe_starts_numbering_over(rig: Rig):

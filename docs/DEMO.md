@@ -22,7 +22,8 @@ The backend runs the plant simulator continuously, so the page is live the momen
 
 - **FLOOR:** show the five machines and two gateways with live throughput. Everything is simulated, with ground truth hidden from the agent.
 - **◆ MEMORY tab:** show the episodes. Open a *vision dropout* episode that was **ESCALATED**, and read the on-call engineer's note aloud: the camera's PoE port on the gateway switch, fixed by a gateway restart. Point out that nothing in the metrics says "restart the gateway"; this note is the only place that knowledge exists.
-- Point to **the runbook the agent wrote itself**. This is Hindsight's *Incident Patterns* mental model, which rewrites itself as incidents consolidate.
+- Point to **the runbook the agent wrote itself** on the right. This is Hindsight's *Incident Patterns* mental model, which rewrites itself as incidents consolidate.
+  - Since 2026-09-29, Hindsight Cloud has left every mental model on the placeholder "Generating content...", even after a completed refresh. The panel then shows the **observations Hindsight consolidated**, which are what the runbook is built from, and says so. Read one aloud: "Stale servo tuning table or cache mismatch causes …". Nobody wrote it; Hindsight distilled it from the episodes.
 
 ## Beat 2: memory ON, where the agent fixes what it once had to escalate (about 90 s)
 
