@@ -39,7 +39,7 @@ The repo is now `github.com/sanithvarma0/memoryops`. The live site, the API and 
   - Memory OFF: 19 tool calls and 2 attempts. Memory ON: 8 tool calls and 1 attempt.
 - [x] At least one honest lesson, limitation or dead end: the silent zero-match run, recall@1 at 65%, 7 of 69 false replays, and the INC-004 replay.
 - [x] Screenshots and images included: the architecture diagram, the memory browser, and the eval chart.
-- [ ] Published to a public, linkable URL. This one's yours.
+- [x] Published to a public, linkable URL: https://dev.to/bunny0711/the-fix-wasnt-in-the-logs-hindsight-remembered-it-28b0
 - [x] The word "hackathon" appears nowhere, including the repo URL and hashtags.
 - [ ] LinkedIn: repo link in the main post, article URL as the first comment, Hindsight repo as a comment.
 - [ ] Reddit: a link post in one of the four listed subreddits.

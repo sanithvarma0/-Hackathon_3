@@ -85,7 +85,7 @@ Recommended: **#1**. Put this in the description:
 ```
 MemoryOps: an incident agent for a production line that learns fixes from past resolutions using Hindsight agent memory.
 
-Article: [ARTICLE URL]
+Article: https://dev.to/bunny0711/the-fix-wasnt-in-the-logs-hindsight-remembered-it-28b0
 Code: https://github.com/sanithvarma0/memoryops
 Live: https://memoryops.vercel.app
 Hindsight: https://github.com/vectorize-io/hindsight

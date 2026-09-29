@@ -12,7 +12,7 @@ Pick one. Recommended: **r/LLMDevs**. It's the most technical audience and the b
 
 **Type:** Link
 
-**URL:** [ARTICLE URL]
+**URL:** https://dev.to/bunny0711/the-fix-wasnt-in-the-logs-hindsight-remembered-it-28b0
 
 **Title** (pick one):
 - The fix wasn't in the logs. Hindsight remembered it.
