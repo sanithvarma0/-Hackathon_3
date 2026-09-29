@@ -112,6 +112,14 @@ async def learn(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             "diagnosis": rec["diagnosis"],
             "final_action": final_action,
             "outcome": episode.outcome,
+            # What a match must be checked against: the pattern and what identified it.
+            "signature": rec["signature"][:300],
+            "decisive_evidence": (summary.decisive_evidence or "")[:300],
+            **(
+                {"engineer_note": resolution.engineer_note[:300]}
+                if resolution.engineer_note
+                else {}
+            ),
         },
         timestamp=datetime.fromtimestamp(episode.ts, UTC),
     )

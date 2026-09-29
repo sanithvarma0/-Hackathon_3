@@ -104,3 +104,24 @@ async def test_llm_judge_parses_and_clamps_scores():
         [{"incident_id": "INC-003", "facts": ["a"]}, {"incident_id": "INC-001", "facts": ["b"]}],
     )
     assert scores == {"INC-003": 1.0, "INC-001": 0.0}  # clamped; unknown IDs dropped
+
+
+async def test_judge_sees_each_candidates_signature_and_evidence():
+    from backend.llm import LLMClient, ModelRoute
+    from backend.memory.judge import llm_judge
+    from tests.fakes import completion
+
+    prompts: list[str] = []
+
+    async def create(**kw: Any) -> Any:
+        prompts.append(kw["messages"][1]["content"])
+        return completion('{"scores": {"INC-001": 0.9}}')
+
+    judge = llm_judge(LLMClient([ModelRoute("fake", "m", create)]))
+    md = {
+        "signature": "sudden loss after a deploy",
+        "decisive_evidence": "deploy 8 min before onset",
+    }
+    await judge("q", [{"incident_id": "INC-001", "facts": ["f"], "md": md}])
+    assert "signature: sudden loss after a deploy" in prompts[0]
+    assert "identified by: deploy 8 min before onset" in prompts[0]

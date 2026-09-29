@@ -85,6 +85,9 @@ def apply_match_rule(
                 final_action=md.get("final_action"),
                 outcome=md.get("outcome"),
                 facts=tuple(t for _, t in sorted(texts[inc], key=lambda x: -x[0])[:4]),
+                signature=md.get("signature"),
+                decisive_evidence=md.get("decisive_evidence"),
+                engineer_note=md.get("engineer_note"),
             )
         )
     return matches
@@ -128,6 +131,9 @@ def _match(c: dict[str, Any], rank: int, score: float, strength: str) -> MemoryM
         final_action=md.get("final_action"),
         outcome=md.get("outcome"),
         facts=tuple(c["facts"][:4]),
+        signature=md.get("signature"),
+        decisive_evidence=md.get("decisive_evidence"),
+        engineer_note=md.get("engineer_note"),
     )
 
 

@@ -112,6 +112,13 @@ def render_recall(matches: list[dict[str, Any]], learned_patterns: list[str]) ->
             f"- {m['incident_id']} ({m['strength']} match): diagnosis={m.get('diagnosis') or '?'}; "
             f"final fix={m.get('final_action') or '?'} ({m.get('outcome') or '?'})"
         )
+        for label, key in (
+            ("signature", "signature"),
+            ("identified by", "decisive_evidence"),
+            ("engineer", "engineer_note"),
+        ):
+            if m.get(key):
+                lines.append(f"    {label}: {m[key]}")
         lines.extend(f"    {f}" for f in m.get("facts", [])[:4])
     if learned_patterns:
         lines.append("Learned patterns:")

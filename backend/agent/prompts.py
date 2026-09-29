@@ -132,6 +132,12 @@ def memory_text(enabled: bool, matches: list[dict[str, Any]], learned_patterns: 
             f"{m.get('diagnosis') or '?'}, final fix={m.get('final_action') or '?'}, "
             f"outcome={m.get('outcome') or '?'}"
         )
+        if m.get("signature"):
+            lines.append(f"    signature: {m['signature']}")
+        if m.get("decisive_evidence"):
+            lines.append(f"    identified by: {m['decisive_evidence']}")
+        if m.get("engineer_note"):
+            lines.append(f"    engineer: {m['engineer_note']}")
         lines.extend(f"    fact: {f}" for f in m.get("facts", []))
     if not matches:
         lines.append("- none")

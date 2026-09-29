@@ -19,6 +19,9 @@ class MemoryMatch(BaseModel):
     final_action: str | None
     outcome: str | None
     facts: tuple[str, ...]
+    signature: str | None = None  # the past incident's pattern, to check the fit against
+    decisive_evidence: str | None = None
+    engineer_note: str | None = None
 
 
 # How the matches were gated: Hindsight's cross-encoder (normal), an LLM relevance check when

@@ -29,8 +29,17 @@ def llm_judge(llm: LLMClient) -> Judge:
     async def judge(query: str, candidates: list[dict[str, Any]]) -> dict[str, float]:
         lines = [f"NEW INCIDENT (observed): {query}", "", "CANDIDATES:"]
         for c in candidates:
+            md = c.get("md") or {}
             lines.append(f"- {c['incident_id']}:")
-            lines.extend(f"    {f}" for f in c["facts"][:3])
+            for label, key in (
+                ("signature", "signature"),
+                ("diagnosis", "diagnosis"),
+                ("identified by", "decisive_evidence"),
+                ("engineer", "engineer_note"),
+            ):
+                if md.get(key):
+                    lines.append(f"    {label}: {md[key]}")
+            lines.extend(f"    fact: {f}" for f in c["facts"][:3])
         resp = await llm.chat(
             [
                 {"role": "system", "content": JUDGE_SYSTEM},

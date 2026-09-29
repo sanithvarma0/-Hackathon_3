@@ -55,6 +55,9 @@ async def test_happy_path_resolves_and_writes_an_episode():
     assert "M3" in episode.text.split("SIGNATURE:")[0]  # machine only in the header
     assert "LESSON: This signature is resolved by ROLLBACK_CONFIG" in episode.text
     assert episode.metadata["final_action"] == "ROLLBACK_CONFIG"
+    # what a later match is checked against travels with the episode
+    assert episode.metadata["signature"].startswith("gradual throughput decline")
+    assert episode.metadata["decisive_evidence"]
 
 
 async def test_trap_fix_is_caught_learned_and_retried():
