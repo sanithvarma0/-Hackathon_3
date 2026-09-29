@@ -300,6 +300,17 @@ Each incident type = **stable signature + noisy surface**. Config Regression and
 
 **Action whitelist (exhaustive):** `ROLLBACK_CONFIG`, `RESTART_MACHINE`, `RECALIBRATE_SENSOR`, `RESTART_GATEWAY`, `CLEAR_CACHE`, `ESCALATE_HUMAN`.
 
+### 5.4b Site-knowledge incidents (added in Phase 5)
+
+The first eval showed that on the four textbook classes the agent is right from evidence alone (24/24 with and without memory, 14.1f): they cannot show what memory is for. Real plants also have **tribal knowledge** — fixes the evidence does not reveal, known only because someone resolved the problem before. Two such classes; the first occurrence *should* be escalated (the engineer's fix is recorded on the ticket and in the episode), and memory is what lets the agent fix the next one itself:
+
+| Type | What the agent can observe | Why the fix is not in the signals | Correct fix |
+|---|---|---|---|
+| `vision_link_dropout` | gradual 16–28% loss; vision timeouts, no-reads, dropped frames; packet loss barely raised (0.5–1%) on **one** machine | a network failure hits every machine on the gateway; here the camera's PoE port on the gateway switch drops under load — a known issue on this line | `RESTART_GATEWAY` |
+| `servo_tuning_drift` | gradual 16–28% loss; axis following errors, settling-time overruns, a cached tuning-table warning; no recent deploy | every controller runs a nightly firmware check (logged every night on every machine, so it is never a giveaway); on some nights the tuning table goes stale until a **cold restart** | `RESTART_MACHINE` — the action memory knows as a *trap* for config regressions, so these incidents also test that lessons are not replayed across classes |
+
+Both are excluded from the UI's predefined triggers and SURPRISE ME for now (the demo script decides in Phase 7); the eval's `full` battery includes them.
+
 ### 5.5 Effects Matrix (complete — `execute_action` implements exactly this)
 
 | Type ↓ / Action → | ROLLBACK_CONFIG | RESTART_MACHINE | RECALIBRATE_SENSOR | RESTART_GATEWAY | CLEAR_CACHE |
@@ -532,7 +543,7 @@ Output to state: `memory_results = [{incident_id, rank, rerank, similarity, summ
 
 The toggle's value is sent with each incident trigger (`memory_enabled`) and stored on the incident.
 
-- **OFF:** `recall_hints` and `search_memory` return empty and emit `memory_skipped`. The LLM has no memory tool, so nothing can leak in. Everything else is identical.
+- **OFF:** `recall_hints` and `search_memory` return empty and emit `memory_skipped`; the `recall_similar_incidents` tool is neither offered nor mentioned (7.3), so nothing can leak in. Everything else is identical.
 - **Retain still happens when OFF** — the agent keeps accumulating experience; only its *use* of memory is disabled. The Learning tab splits series by `memory_enabled` so ON vs OFF is directly comparable.
 
 ### 6.5 Mental Model — "Incident Patterns" (core, Phase 3)
@@ -645,7 +656,7 @@ get_error_logs(machine_id: str, window_minutes: int) -> list[str]
 
 Each tool is a thin wrapper over the matching `EnvironmentAdapter` method (5.9): arguments are validated with Pydantic before the call, results are serialized compactly for the LLM.
 
-There is **no memory tool for the LLM** (v1.0 had `search_incident_history`). Memory access is deterministic in `recall_hints` / `search_memory`, which keeps the ON/OFF comparison clean and the memory calls visible in the trace.
+**Memory tool (added in Phase 5, memory ON only):** `recall_similar_incidents(observations)` lets the agent ask memory mid-investigation, once it knows the basic symptoms — the textbook eval showed the deterministic touchpoints alone never shortened an investigation (tool calls ON − OFF −0.2, CI [−1.0, +0.5]). Results use the same match gate as `search_memory`, are framed as hypotheses ("confirm the decisive evidence with one or two calls, conclude when it holds, otherwise ignore"), cost a tool call and 35 sim-s like any other, and show in purple in the trace. With memory OFF the tool is not offered and not mentioned; a model that invents it gets an unknown-tool error, never memory (tested). The deterministic `recall_hints` / `search_memory` touchpoints stay.
 
 ### 7.4 Prompts & Output Schema
 
@@ -692,7 +703,8 @@ class Recommendation(BaseModel):
 - **Usage ledger** (`data/usage.db`, persistent, git-ignored): one row per LLM attempt — run label, incident, agent step, provider, model, prompt / cached / completion / reasoning tokens, cost, latency, error — plus one row per Hindsight retain with the tokens Hindsight reports.
 - **Cost** from `PRICES` (USD per 1M tokens, cached input discounted), sourced from OpenAI's published Standard-tier price list (fetched 2026-09-28): `gpt-5.4-mini` $0.75 in / $0.075 cached / $4.50 out. Groq calls cost $0 on the free plan (tokens still counted). An unpriced model is reported as such, never guessed.
 - **Hard cap:** `LLM_SPEND_CAP_USD` (default $10) is checked against the ledger's all-time total before every call; reaching it raises `LLMBudgetExceeded` → `error{LLM_BUDGET_EXCEEDED}` → escalation.
-- **Reports:** `make usage` (all-time, by model, by agent step, recent runs, $/incident); `scripts/demo_dryrun.py` prints tokens and cost per incident; the eval report will include the same.
+- **Hindsight spend (Phase 5):** every operation is priced from Hindsight's published rates (retain $10/M, recall $0.75/M, mental-model retrieve $0.25/M, mental-model refresh $0.05/call). Hindsight does not report billable tokens (a retain's `usage` is its internal LLM tokens, ~4× what is billed; recall reports nothing), so billed tokens are **estimated** from text size (~4 chars/token) and labelled as estimates. Runbook refreshes — which dominated the bill ($1.90 of $2.20 before Phase 5) — are counted by watching the mental model's `last_refreshed_at` (the live watcher now polls metadata only and fetches content only after a rebuild). Existing ledgers are migrated in place.
+- **Reports:** `make usage` (all-time, by model, by agent step, Hindsight by operation, recent runs, $/incident); the UI spend badge shows LLM + Hindsight; the eval report has cost per incident per condition.
 
 ---
 
@@ -982,6 +994,22 @@ metrics(run_id TEXT, condition TEXT, seed INTEGER, position INTEGER,
 5. Retrieval: recall@1 ≥ 0.8 when a same-class prior exists.
 
 If a target is missed, the fix is in the agent or memory design — never in the metric.
+
+6. *(added in Phase 5)* No harm: on textbook incidents memory does not lower accuracy — the paired ON − OFF accuracy difference is not significantly below 0.
+
+A target with no data (e.g. a run too short to reach a 3rd exposure) is reported as **NO DATA**, never as a pass or a fail.
+
+### 11.6 As built (Phase 5)
+
+- **Code:** `backend/eval/sequence.py` (battery design), `harness.py` (units, cost model, checkpoints), `stats.py` (bootstrap, paired, Wilson, Brier, reliability — tested on known inputs), `report.py` (summary, REPORT.md, charts), `scripts/run_eval.py` (`make eval`, `make eval-quick`, `--resume`, `--report`, `--battery`, `--max-usd`).
+- **Batteries:** `textbook` (4 classes × 6) is the control; `full` (6 classes × 4, adds 5.4b) is the default. Quick runs: 1 seed, 3 rounds (reaches a 3rd exposure).
+- **Paired for real:** every incident carries a spec seed, so ON and OFF face the identical signature, magnitude, timing and log wording (background jitter may differ in the second decimal — tested).
+- **Fast-forward cost model:** 35 sim-s per tool call (measured in the live UI session: 3.5 s real per tool call at SIM_SPEED 10), verify windows, detection and escalation penalties as the simulator defines, human approval 0. MTTR therefore reflects what the agent did, never API latency; the report shows its drivers.
+- **Quiet time between incidents** 2–12 sim-hours (seeded): the previous incident's events are sometimes still within the look-back windows — the INC-005 false replay (14.1e) came from exactly that.
+- **Resume** is per unit: rows are checkpointed after every incident, but a half-finished unit is re-run from scratch (its world and its memory bank are inseparable from its history).
+- **Families and safety:** the report splits textbook vs site-knowledge; `safe` = right fix or hand-over to a human (never a wrong fix applied).
+- **Statistics caveat, printed in the report:** incidents within a seed share a world and a bank, so pooled CIs assume more independence than exists; per-seed means are shown alongside.
+- **CI** runs the whole pipeline (harness → rows → report → charts) with a fake LLM and fake memory; the live eval never runs in CI.
 
 ---
 
