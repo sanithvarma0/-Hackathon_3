@@ -32,7 +32,7 @@ Code: github.com/sanithvarma0/memoryops
 
 ## First comment: the article
 
-> I wrote up the full build, including the week my memory layer silently returned zero matches: https://dev.to/bunny0711/the-fix-wasnt-in-the-logs-hindsight-remembered-it-28b0
+> I wrote up the full build, including the day my memory layer silently returned zero matches: https://dev.to/bunny0711/the-fix-wasnt-in-the-logs-hindsight-remembered-it-28b0
 
 ## Second comment: Hindsight (required by the guide)
 
