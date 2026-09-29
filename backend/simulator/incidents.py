@@ -18,6 +18,9 @@ CORRECT_FIX: dict[IncidentType, Action] = {
     "network_failure": "RESTART_GATEWAY",
     "resource_exhaustion": "CLEAR_CACHE",
     "ambiguous": "ESCALATE_HUMAN",
+    # site knowledge: not derivable from the signals (see SITE_KNOWLEDGE_TYPES)
+    "vision_link_dropout": "RESTART_GATEWAY",  # camera PoE port on the gateway switch
+    "servo_tuning_drift": "RESTART_MACHINE",  # tuning table reloads only on a cold restart
 }
 
 
@@ -46,6 +49,8 @@ EFFECTS: dict[IncidentType, dict[Action, EffectSpec]] = {
         "RESTART_MACHINE": EffectSpec("partial_recovery", (90.0, 95.0), (120, 150)),
     },
     "ambiguous": {},
+    "vision_link_dropout": {"RESTART_GATEWAY": FULL},
+    "servo_tuning_drift": {"RESTART_MACHINE": FULL},
 }
 
 
@@ -64,6 +69,8 @@ class SignalFlags:
     high_sensor_variance: bool = False
     network_degraded: bool = False
     memory_climbing: bool = False
+    vision_dropout: bool = False  # vision timeouts + slightly elevated loss on one machine
+    servo_drift: bool = False  # following errors, stale tuning table after the nightly check
 
 
 @dataclass(frozen=True)
@@ -116,6 +123,20 @@ LOG_TEMPLATES: dict[IncidentType, tuple[tuple[str, str], ...]] = {
         ("WARN", "cycle time +{pct}% vs nominal ({nominal}s -> {actual}s)"),
         ("WARN", "part quality drift flagged by SPC on station"),
         ("WARN", "operator note: intermittent slowdowns, cause unknown"),
+    ),
+    "vision_link_dropout": (
+        ("WARN", "vision frame timeout on cam-{n} ({ms} ms)"),
+        ("WARN", "part presence check no-read, retrying"),
+        ("ERROR", "gripper held: waiting for vision confirmation ({s}s)"),
+        ("WARN", "vision worker reconnecting to camera stream"),
+        ("WARN", "image acquisition dropped {n} frames"),
+    ),
+    "servo_tuning_drift": (
+        ("WARN", "axis {axis} following error {err} mm (warning band)"),
+        ("WARN", "cycle time +{pct}% vs nominal ({nominal}s -> {actual}s)"),
+        ("WARN", "servo tuning table checksum mismatch (cached copy in use)"),
+        ("WARN", "axis {axis} settling time exceeded by {ms} ms"),
+        ("INFO", "adaptive feed reduced to {clamp}% to hold tolerance"),
     ),
 }
 
@@ -216,7 +237,27 @@ def generate_spec(incident_type: IncidentType, machine_id: str, rng: random.Rand
             flags=SignalFlags(onset="gradual", memory_climbing=True),
             error_extra_pct=rng.uniform(2, 6),
         )
-    raise ValueError(f"not a predefined incident type: {incident_type}")
+    if incident_type == "vision_link_dropout":
+        return IncidentSpec(
+            type=incident_type,
+            machine_id=machine_id,
+            depth=rng.uniform(0.16, 0.28),
+            ramp_sim_s=rng.randint(300, 900),
+            flags=SignalFlags(onset="gradual", vision_dropout=True),
+            error_extra_pct=rng.uniform(1, 3),
+            packet_loss_pct=rng.uniform(0.5, 1.0),  # barely above normal, this machine only
+            latency_ms=rng.uniform(3, 8),
+        )
+    if incident_type == "servo_tuning_drift":
+        return IncidentSpec(
+            type=incident_type,
+            machine_id=machine_id,
+            depth=rng.uniform(0.16, 0.28),
+            ramp_sim_s=rng.randint(600, 1200),
+            flags=SignalFlags(onset="gradual", servo_drift=True),
+            error_extra_pct=rng.uniform(1.5, 4),
+        )
+    raise ValueError(f"not a generated incident type: {incident_type}")
 
 
 def classify_custom(spec: CustomIncidentSpec) -> IncidentType:
@@ -272,4 +313,8 @@ def log_vocabularies(flags: SignalFlags) -> tuple[IncidentType, ...]:
         vocab.append("network_failure")
     if flags.memory_climbing:
         vocab.append("resource_exhaustion")
+    if flags.vision_dropout:
+        vocab.append("vision_link_dropout")
+    if flags.servo_drift:
+        vocab.append("servo_tuning_drift")
     return tuple(vocab) or ("ambiguous",)

@@ -29,7 +29,7 @@ from typing import Any, Literal
 
 from backend.agent.deps import Emit, WaitSim
 from backend.eval import metrics
-from backend.eval.sequence import Planned, build_sequence
+from backend.eval.sequence import Planned, build_sequence, family
 from backend.service import AgentHandle
 from backend.simulator import ManualClock, Simulator
 from backend.simulator.db import connect
@@ -58,6 +58,7 @@ class Unit:
     condition: Condition
     seed: int
     n_incidents: int
+    battery: str = "textbook"
 
     @property
     def key(self) -> str:
@@ -80,9 +81,11 @@ class _Probe:
     events: list[str] = field(default_factory=list)
 
 
-def plan_units(run_id: str, seeds: list[int], n_incidents: int) -> list[Unit]:
+def plan_units(
+    run_id: str, seeds: list[int], n_incidents: int, battery: str = "textbook"
+) -> list[Unit]:
     # Seeds outer, conditions inner: with limited parallelism, pairs finish together.
-    return [Unit(run_id, c, s, n_incidents) for s in seeds for c in CONDITIONS]
+    return [Unit(run_id, c, s, n_incidents, battery) for s in seeds for c in CONDITIONS]
 
 
 async def run_unit(
@@ -115,7 +118,7 @@ async def run_unit(
     agent = await factory(sim, conn, unit.bank_id, emit, wait_sim, unit.run_label)
     rows: list[dict[str, Any]] = []
     try:
-        for planned in build_sequence(unit.seed, unit.n_incidents):
+        for planned in build_sequence(unit.seed, unit.n_incidents, unit.battery):
             if budget is not None:
                 budget()
             row = await _run_incident(unit, planned, sim, clock, agent, probe)
@@ -193,6 +196,8 @@ async def _run_incident(
     )
     row.update(
         run_id=unit.run_id,
+        battery=unit.battery,
+        family=family(planned.type),
         condition=unit.condition,
         seed=unit.seed,
         position=planned.position,
@@ -202,6 +207,8 @@ async def _run_incident(
         prior_other_class=any(t != planned.type for t in types.values()),
         matches=matches,
         first_recommendation=final.get("first_action_recommended"),
+        memory_tool_calls=final.get("memory_tool_calls", 0),
+        engineer_action=closed.engineer_action,
         cited=final.get("first_cited_incidents") or [],
         trace_url=result.trace_url,
         error=error,

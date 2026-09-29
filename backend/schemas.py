@@ -15,7 +15,13 @@ Action = Literal[
 ACTIONS: tuple[Action, ...] = get_args(Action)
 
 IncidentType = Literal[
-    "config_regression", "sensor_drift", "network_failure", "resource_exhaustion", "ambiguous"
+    "config_regression",
+    "sensor_drift",
+    "network_failure",
+    "resource_exhaustion",
+    "ambiguous",
+    "vision_link_dropout",
+    "servo_tuning_drift",
 ]
 PREDEFINED_TYPES: tuple[IncidentType, ...] = (
     "config_regression",
@@ -23,6 +29,10 @@ PREDEFINED_TYPES: tuple[IncidentType, ...] = (
     "network_failure",
     "resource_exhaustion",
 )
+# Site knowledge (BUILD_PLAN 5.4b): the fix cannot be derived from the signals — it is known
+# only to the plant's engineers, so the first occurrence should escalate and memory is what
+# lets the agent fix the next one itself.
+SITE_KNOWLEDGE_TYPES: tuple[IncidentType, ...] = ("vision_link_dropout", "servo_tuning_drift")
 
 MachineStatus = Literal["healthy", "degraded", "critical", "recovering"]
 IncidentStatus = Literal["open", "awaiting_action", "verifying", "resolved", "escalated"]

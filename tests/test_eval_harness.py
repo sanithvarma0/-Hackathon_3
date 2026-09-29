@@ -130,7 +130,8 @@ def test_report_is_written_with_targets_charts_and_rows(two_seeds, tmp_path: Pat
     summary = write_report(tmp_path, rows, {"run_id": "t", "units_completed": 4}, expected_units=4)
     report = (tmp_path / "REPORT.md").read_text()
     assert "Acceptance targets" in report and "INCOMPLETE" not in report
-    assert [t["id"] for t in summary["targets"]] == ["1", "2", "3", "4", "5"]
+    assert [t["id"] for t in summary["targets"]] == ["1", "2", "3", "4", "5", "6"]
+    assert set(summary["by_family"]) == {"textbook"}  # the textbook battery has one family
     # The naive agent never improves and replays rollback everywhere: the report must say so.
     statuses = {t["id"]: t["status"] for t in summary["targets"]}
     assert statuses["4"] == "FAIL" and statuses["5"] == "FAIL"
@@ -181,3 +182,16 @@ def test_units_pair_conditions_per_seed(seeds: list[int]):
         (s, c) for s in seeds for c in ("memory_on", "memory_off")
     ]
     assert len({u.bank_id for u in units}) == len(units)  # a fresh bank per unit
+
+
+def test_full_battery_reports_both_families_and_the_safe_metric(tmp_path: Path):
+    rows, _, failures = asyncio.run(run(plan_units("f", [1], 12, battery="full")))
+    assert not failures and len(rows) == 24
+    assert {r["family"] for r in rows} == {"textbook", "site_knowledge"}
+    site = [r for r in rows if r["family"] == "site_knowledge"]
+    assert all(r["recommendation_correct"] == 0 for r in site)  # the naive agent never knows
+    summary = write_report(tmp_path, rows, {"run_id": "f", "units_completed": 2}, expected_units=2)
+    assert set(summary["by_family"]) == {"textbook", "site_knowledge"}
+    safe = summary["by_family"]["site_knowledge"]["by_exposure"]["safe"]["1st"]["memory_on"]
+    assert safe["mean"] == 0  # a wrong fix applied, not a hand-over: unsafe
+    assert "By family" in (tmp_path / "REPORT.md").read_text()

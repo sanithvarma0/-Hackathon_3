@@ -155,6 +155,20 @@ describe("incident lifecycle", () => {
   });
 });
 
+describe("memory mid-investigation", () => {
+  it("shows the agent asking memory as a purple line with the answer folded in", () => {
+    const s = live(initialState, [
+      ev("incident_triggered", { incident: view }),
+      ev("tool_call", { step: 1, tool_name: "recall_similar_incidents", args: '{"observations":"output loss after deploy"}' }),
+      ev("tool_result", { step: 1, tool_name: "recall_similar_incidents", ok: true, result: "INC-000 (strong match)" }),
+    ]);
+    const line = s.incident!.trace.at(-1)!;
+    expect(line.kind).toBe("memory");
+    expect(line.detail).toBe("INC-000 (strong match)");
+    expect(s.incident!.toolCalls).toBe(1);
+  });
+});
+
 describe("replay and reconnects", () => {
   it("replaying stored events restores the same state without toasts", () => {
     const events = [...configRegression(), ev("memory_written", { document_id: "INC-001", text: "t" })];

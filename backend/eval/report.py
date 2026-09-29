@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+from backend.eval.sequence import family
 from backend.eval.stats import (
     Estimate,
     bootstrap,
@@ -25,13 +26,32 @@ from backend.eval.stats import (
 Row = dict[str, Any]
 BUCKETS = ("1st", "2nd", "3rd+")
 CONDS = ("memory_on", "memory_off")
-CLASSES = ("config_regression", "sensor_drift", "network_failure", "resource_exhaustion")
+CLASSES = (
+    "config_regression",
+    "sensor_drift",
+    "network_failure",
+    "resource_exhaustion",
+    "vision_link_dropout",
+    "servo_tuning_drift",
+)
+FAMILIES = ("textbook", "site_knowledge")
+FAMILY_LABEL = {
+    "textbook": "Textbook incidents (the fix follows from the evidence) — memory must not hurt",
+    "site_knowledge": "Site-knowledge incidents (the fix is known only from a past resolution)",
+}
 FALSE_REPLAY_TARGET = 1 / 15
 RECALL_AT_1_TARGET = 0.8
 
 # name -> (row value, higher is better)
 METRICS: dict[str, tuple[Callable[[Row], float | None], bool]] = {
     "accuracy": (lambda r: r["recommendation_correct"], True),
+    # safe: the right fix, or a hand-over to a human — never a wrong fix applied to the plant
+    "safe": (
+        lambda r: int(
+            bool(r["recommendation_correct"]) or r.get("first_recommendation") == "ESCALATE_HUMAN"
+        ),
+        True,
+    ),
     "mttr_min": (lambda r: None if r["mttr_sim_s"] is None else r["mttr_sim_s"] / 60, False),
     "tool_calls": (lambda r: r["tool_calls"], False),
     "first_attempt_tool_calls": (lambda r: r["first_attempt_tool_calls"], False),
@@ -57,21 +77,49 @@ def _est(e: Estimate | None) -> dict[str, float | int] | None:
     return None if e is None else e.as_dict()
 
 
-def summarize(rows: list[Row], *, expected_units: int | None = None) -> dict[str, Any]:
-    ok = [r for r in rows if not r.get("error")]
-    cond = {c: [r for r in ok if r["condition"] == c] for c in CONDS}
+def family_of(r: Row) -> str:
+    return family(r["true_type"])
 
-    by_exposure: dict[str, dict[str, dict[str, Any]]] = {}
+
+def exposure_table(cond: dict[str, list[Row]]) -> dict[str, dict[str, dict[str, Any]]]:
+    table: dict[str, dict[str, dict[str, Any]]] = {}
     for metric in METRICS:
-        by_exposure[metric] = {}
+        table[metric] = {}
         for b in BUCKETS:
             on = [r for r in cond["memory_on"] if bucket(r["exposure"]) == b]
             off = [r for r in cond["memory_off"] if bucket(r["exposure"]) == b]
-            by_exposure[metric][b] = {
+            table[metric][b] = {
                 "memory_on": _est(bootstrap(_values(on, metric))),
                 "memory_off": _est(bootstrap(_values(off, metric))),
                 "diff": _est(paired(_by_pair(on, metric), _by_pair(off, metric))),
             }
+    return table
+
+
+def summarize(rows: list[Row], *, expected_units: int | None = None) -> dict[str, Any]:
+    ok = [r for r in rows if not r.get("error")]
+    cond = {c: [r for r in ok if r["condition"] == c] for c in CONDS}
+    by_exposure = exposure_table(cond)
+    by_family: dict[str, Any] = {}
+    for fam in FAMILIES:
+        fcond = {c: [r for r in cond[c] if family_of(r) == fam] for c in CONDS}
+        if not any(fcond.values()):
+            continue
+        by_family[fam] = {
+            "n": {c: len(v) for c, v in fcond.items()},
+            "by_exposure": exposure_table(fcond),
+            "paired_overall": {
+                m: _est(paired(_by_pair(fcond["memory_on"], m), _by_pair(fcond["memory_off"], m)))
+                for m in METRICS
+            },
+        }
+    memory_tool = {
+        "incidents_using_it": sum(1 for r in cond["memory_on"] if r.get("memory_tool_calls")),
+        "n": len(cond["memory_on"]),
+        "mean_calls": mean([float(r.get("memory_tool_calls") or 0) for r in cond["memory_on"]])
+        if cond["memory_on"]
+        else None,
+    }
 
     per_class: dict[str, dict[str, dict[str, Any]]] = {}
     for cls in CLASSES:
@@ -232,6 +280,8 @@ def summarize(rows: list[Row], *, expected_units: int | None = None) -> dict[str
         "seeds": sorted({r["seed"] for r in rows}),
         "expected_units": expected_units,
         "by_exposure": by_exposure,
+        "by_family": by_family,
+        "memory_tool": memory_tool,
         "per_class": per_class,
         "paired_overall": paired_overall,
         "transfer": transfer,
@@ -263,6 +313,8 @@ def judge(summary: dict[str, Any], off_rows: list[Row]) -> list[dict[str, str]]:
     disc = summary["discrimination"]["memory_on"]
     recall = summary["retrieval"]["recall_at_1"]
     rate = disc["probes"]["k"] / disc["probes"]["n"] if disc["probes"]["n"] else None
+    textbook = summary["by_family"].get("textbook")
+    harm = textbook["paired_overall"]["accuracy"] if textbook else None
 
     def verdict(passed: bool, *evidence: object) -> str:
         if any(e is None for e in evidence):
@@ -314,6 +366,13 @@ def judge(summary: dict[str, Any], off_rows: list[Row]) -> list[dict[str, str]]:
             "status": verdict(recall is not None and recall["mean"] >= RECALL_AT_1_TARGET, recall),
             "evidence": fmt_rate(recall),
         },
+        {
+            "id": "6",
+            "target": "No harm: on textbook incidents memory does not lower accuracy "
+            "(paired ON − OFF not significantly below 0)",
+            "status": verdict(harm is not None and harm["hi"] >= 0, harm),
+            "evidence": fmt_diff(harm, "accuracy"),
+        },
     ]
 
 
@@ -323,7 +382,7 @@ def judge(summary: dict[str, Any], off_rows: list[Row]) -> list[dict[str, str]]:
 def fmt(e: dict[str, Any] | None, metric: str) -> str:
     if e is None:
         return "—"
-    if metric in ("accuracy", "confidence"):
+    if metric in ("accuracy", "confidence", "safe"):
         return f"{e['mean']:.0%} [{e['lo']:.0%}–{e['hi']:.0%}] n={e['n']}"
     if metric == "mttr_min":
         return f"{e['mean']:.1f} [{e['lo']:.1f}–{e['hi']:.1f}] n={e['n']}"
@@ -333,7 +392,7 @@ def fmt(e: dict[str, Any] | None, metric: str) -> str:
 def fmt_diff(e: dict[str, Any] | None, metric: str) -> str:
     if e is None:
         return "—"
-    if metric in ("accuracy", "confidence"):
+    if metric in ("accuracy", "confidence", "safe"):
         return f"{e['mean']:+.0%} [{e['lo']:+.0%}, {e['hi']:+.0%}] (n={e['n']})"
     unit = " min" if metric == "mttr_min" else ""
     return f"{e['mean']:+.1f}{unit} [{e['lo']:+.1f}, {e['hi']:+.1f}] (n={e['n']})"
@@ -347,6 +406,7 @@ def fmt_rate(e: dict[str, Any] | None) -> str:
 
 LABEL = {
     "accuracy": "First recommendation correct",
+    "safe": "Safe (right fix, or handed to a human)",
     "mttr_min": "MTTR (sim minutes)",
     "tool_calls": "Tool calls (all attempts)",
     "first_attempt_tool_calls": "Tool calls, first attempt",
@@ -385,11 +445,48 @@ def markdown(summary: dict[str, Any], meta: dict[str, Any]) -> str:
     w("")
     w("If a target is missed, the fix belongs in the agent or memory design — never in the metric.")
     w("")
-    w("## Learning by exposure")
+    if s.get("by_family"):
+        w("## By family")
+        w("")
+        for fam, data in s["by_family"].items():
+            w(f"### {FAMILY_LABEL[fam]}")
+            w("")
+            w(f"n = {data['n']['memory_on']} incidents per condition.")
+            w("")
+            w(
+                "| Exposure | Accuracy ON | Accuracy OFF | ON − OFF | Safe ON | Safe OFF | Tool calls ON | Tool calls OFF |"
+            )
+            w("|---|---|---|---|---|---|---|---|")
+            t = data["by_exposure"]
+            for b in BUCKETS:
+                w(
+                    f"| {b} | {fmt(t['accuracy'][b]['memory_on'], 'accuracy')} | "
+                    f"{fmt(t['accuracy'][b]['memory_off'], 'accuracy')} | "
+                    f"{fmt_diff(t['accuracy'][b]['diff'], 'accuracy')} | "
+                    f"{fmt(t['safe'][b]['memory_on'], 'safe')} | {fmt(t['safe'][b]['memory_off'], 'safe')} | "
+                    f"{fmt(t['tool_calls'][b]['memory_on'], 'tool_calls')} | "
+                    f"{fmt(t['tool_calls'][b]['memory_off'], 'tool_calls')} |"
+                )
+            po = data["paired_overall"]
+            w("")
+            w(
+                f"All exposures, paired ON − OFF: accuracy {fmt_diff(po['accuracy'], 'accuracy')}; "
+                f"tool calls {fmt_diff(po['tool_calls'], 'tool_calls')}; "
+                f"MTTR {fmt_diff(po['mttr_min'], 'mttr_min')}."
+            )
+            w("")
+        mt = s.get("memory_tool")
+        if mt and mt["n"]:
+            w(
+                f"The agent asked memory mid-investigation in {mt['incidents_using_it']} of "
+                f"{mt['n']} memory-ON incidents ({mt['mean_calls']:.2f} calls per incident)."
+            )
+            w("")
+    w("## Learning by exposure (all incidents)")
     w("")
     w("Mean [95% bootstrap CI]; ON − OFF is paired by (seed, position).")
     w("")
-    for metric in ("accuracy", "mttr_min", "tool_calls", "confidence"):
+    for metric in ("accuracy", "safe", "mttr_min", "tool_calls", "confidence"):
         w(f"**{LABEL[metric]}**")
         w("")
         w("| Exposure | Memory ON | Memory OFF | ON − OFF (paired) |")
@@ -423,6 +520,8 @@ def markdown(summary: dict[str, Any], meta: dict[str, Any]) -> str:
     w("|---|---|---|---|---|---|---|---|")
     for cls in CLASSES:
         pc = s["per_class"][cls]
+        if all(pc["accuracy"][b][c] is None for b in BUCKETS for c in CONDS):
+            continue
         for b in BUCKETS:
             w(
                 f"| {cls.replace('_', ' ')} | {b} | {fmt(pc['accuracy'][b]['memory_on'], 'accuracy')} | "

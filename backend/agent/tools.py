@@ -69,6 +69,68 @@ TOOL_DOCS: dict[str, tuple[type[_Args], str]] = {
 }
 
 
+# ---- memory during the investigation (offered only when memory is ON) ---------------------
+
+MEMORY_TOOL = "recall_similar_incidents"
+
+
+class RecallArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observations: str = Field(
+        min_length=15,
+        max_length=800,
+        description="What you have observed so far, stated generally (symptoms, onset, what "
+        "changed, error pattern) — no machine IDs or numbers needed",
+    )
+
+
+def memory_tool_spec() -> dict[str, Any]:
+    schema = RecallArgs.model_json_schema()
+    schema.pop("title", None)
+    for prop in schema.get("properties", {}).values():
+        prop.pop("title", None)
+    return {
+        "type": "function",
+        "function": {
+            "name": MEMORY_TOOL,
+            "description": "Search this plant's incident memory for past incidents with the "
+            "same signature. Returns how each was diagnosed, the evidence that identified it, "
+            "and which fixes worked or failed. Use once you know the basic symptoms.",
+            "parameters": schema,
+        },
+    }
+
+
+def render_recall(matches: list[dict[str, Any]], learned_patterns: list[str]) -> str:
+    """What the investigation sees from memory: compact, and explicit that it must be verified."""
+    if not matches and not learned_patterns:
+        return "No similar past incident in memory. Continue the investigation from evidence."
+    lines = ["Similar past incidents at this plant (best first; verify before trusting):"]
+    for m in matches:
+        lines.append(
+            f"- {m['incident_id']} ({m['strength']} match): diagnosis={m.get('diagnosis') or '?'}; "
+            f"final fix={m.get('final_action') or '?'} ({m.get('outcome') or '?'})"
+        )
+        lines.extend(f"    {f}" for f in m.get("facts", [])[:4])
+    if learned_patterns:
+        lines.append("Learned patterns:")
+        lines.extend(f"- {p}" for p in learned_patterns[:3])
+    lines.append(
+        "If a match fits, confirm its decisive evidence here with one or two targeted calls and "
+        "conclude as soon as it holds. If it does not hold, ignore the match."
+    )
+    return "\n".join(lines)
+
+
+def parse_recall_args(raw_args: str | None) -> RecallArgs | str:
+    """The validated arguments, or an error message for the model."""
+    try:
+        return RecallArgs.model_validate(json.loads(raw_args or "{}"))
+    except (json.JSONDecodeError, ValidationError) as e:
+        return f"ERROR: invalid arguments for {MEMORY_TOOL} ({e}). Expected: observations (text)"
+
+
 def tool_specs() -> list[dict[str, Any]]:
     """OpenAI-format tool definitions, generated from the argument models."""
     specs = []

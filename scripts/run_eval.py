@@ -69,6 +69,7 @@ def metadata(args: argparse.Namespace, settings: Settings, run_id: str) -> dict[
         "git_dirty": bool(git("status", "--porcelain", "--untracked-files=no")),
         "seeds": args.seeds,
         "incidents_per_unit": args.incidents,
+        "battery": args.battery,
         "conditions": ["memory_on", "memory_off"],
         "parallel": args.parallel,
         "tool_call_sim_s": TOOL_CALL_SIM_S,
@@ -140,7 +141,13 @@ async def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("--quick", action="store_true", help="1 seed, 12 incidents")
+    parser.add_argument("--quick", action="store_true", help="1 seed, one short run per battery")
+    parser.add_argument(
+        "--battery",
+        choices=("full", "textbook"),
+        default="full",
+        help="full: textbook + site-knowledge classes (default); textbook: the control only",
+    )
     parser.add_argument("--seeds", type=int, nargs="+", default=None, help="default: 1 2 3")
     parser.add_argument("--incidents", type=int, default=None, help="per unit; default 24")
     parser.add_argument("--parallel", type=int, default=3, help="units run concurrently")
@@ -151,7 +158,9 @@ async def main() -> int:
     parser.add_argument("--no-latest", action="store_true", help="don't mark as latest report")
     args = parser.parse_args()
     args.seeds = args.seeds or ([1] if args.quick else [1, 2, 3])
-    args.incidents = args.incidents or (12 if args.quick else 24)
+    # quick: one incident of each class per round, 3 rounds (reaches a 3rd exposure)
+    per_round = 6 if args.battery == "full" else 4
+    args.incidents = args.incidents or (3 * per_round if args.quick else 24)
 
     settings = get_settings()
     if args.report or args.resume:
@@ -159,16 +168,20 @@ async def main() -> int:
         meta = json.loads((out_dir / "metadata.json").read_text())
         run_id = meta["run_id"]
         args.seeds, args.incidents = meta["seeds"], meta["incidents_per_unit"]
+        args.battery = meta.get("battery", "textbook")  # runs before batteries existed
     else:
         sha = git("rev-parse", "--short", "HEAD")
-        run_id = f"{datetime.now(UTC):%Y%m%d-%H%M%S}-{sha}{'-quick' if args.quick else ''}"
+        suffix = ("-quick" if args.quick else "") + (
+            "-textbook" if args.battery == "textbook" else ""
+        )
+        run_id = f"{datetime.now(UTC):%Y%m%d-%H%M%S}-{sha}{suffix}"
         out_dir = EVAL_DIR / run_id
         meta = metadata(args, settings, run_id)
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
 
     checkpoint = Checkpoint(out_dir)
-    units = plan_units(run_id, args.seeds, args.incidents)
+    units = plan_units(run_id, args.seeds, args.incidents, args.battery)
 
     if not args.report:
         checkpoint.drop_partial()

@@ -22,7 +22,7 @@ Be efficient: most incidents are identified in 3 to 6 tool calls. Read the affec
 own metrics carefully (every field) before checking other machines, and stop as soon as the
 evidence is sufficient. You have at most {max_tool_calls} tool calls. Each tool result is
 labelled [step N].
-
+{memory_block}
 Do NOT recommend a fix; a separate step decides. When done, reply with ONLY this JSON object:
 {{"onset": "gradual" | "sudden" | "unclear",
   "key_signals": ["signals you actually observed, stated generally, present not absent"],
@@ -31,6 +31,15 @@ Do NOT recommend a fix; a separate step decides. When done, reply with ONLY this
   "decisive_steps": [step numbers that were decisive],
   "decisive_evidence": "one sentence: which evidence identified the cause",
   "summary": "two or three sentences"}}"""
+
+INVESTIGATE_MEMORY_BLOCK = """
+This plant keeps an incident memory. Once you know the basic symptoms (usually after the
+machine's own metrics and logs), call recall_similar_incidents with what you observed. If a past
+incident matches, confirm its decisive evidence here with one or two targeted calls; if it
+holds, conclude immediately instead of running every check. If it does not hold, ignore it.
+Some fixes at this plant are known only from past incidents (an engineer's fix): report such a
+match in your summary even when the evidence alone would not point to that fix.
+"""
 
 DECIDE_SYSTEM = """\
 You decide the remediation for a production incident. Choose exactly one action:

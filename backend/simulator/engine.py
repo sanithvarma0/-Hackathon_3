@@ -24,6 +24,7 @@ from backend.schemas import (
     ACTIONS,
     METRICS,
     PREDEFINED_TYPES,
+    SITE_KNOWLEDGE_TYPES,
     Action,
     ActionReceipt,
     ActionRecord,
@@ -59,6 +60,10 @@ from backend.simulator.machines import FEEDS, GATEWAYS, LINE, MACHINES, format_v
 STEP_SIM_S = 10
 BACKFILL_DAYS = 7
 BACKFILL_STEP_SIM_S = 900
+# Every controller runs a firmware integrity check every night (routine, so its presence is
+# never a giveaway): 02:00 UTC plus a per-machine offset.
+FIRMWARE_CHECK_S = 2 * 3600
+FIRMWARE_CHECK_OFFSET_S = 600
 HEALTHY_RATIO = 0.90  # throughput / baseline at or above this is healthy
 CRITICAL_RATIO = 0.70
 ACTION_RAMP_SIM_S = 20  # how long an effective fix takes to take hold
@@ -275,6 +280,14 @@ class Simulator:
                 )
         gw = rng.choice(tuple(GATEWAYS))
         self._event(gw, rng.randint(start, now - 86400), "gateway_restart", "firmware update 3.4.2")
+        for i, mid in enumerate(MACHINES):
+            first = start - start % 86400 + FIRMWARE_CHECK_S + i * FIRMWARE_CHECK_OFFSET_S
+            for ts in range(first, now, 86400):
+                if ts >= start:
+                    self._firmware_check(mid, ts)
+
+    def _firmware_check(self, mid: str, ts: int) -> None:
+        self._event(mid, ts, "firmware_check", "nightly controller firmware integrity check: OK")
 
     # ---- dynamics ---------------------------------------------------------------------------
 
@@ -293,11 +306,13 @@ class Simulator:
 
     def _step(self, t: int) -> None:
         fault = self._fault
-        for mid in MACHINES:
+        for i, mid in enumerate(MACHINES):
             self._current[mid] = self._sample(mid, t, advance=True)
             self._write_history(mid, t)
             if self._rng.random() < 0.004:
                 self._log_noise(mid, t)
+            if t % 86400 == FIRMWARE_CHECK_S + i * FIRMWARE_CHECK_OFFSET_S:
+                self._firmware_check(mid, t)
         if fault is None:
             return
 
@@ -381,7 +396,7 @@ class Simulator:
                 temp += spec.phantom_delta_c * level
             if flags.high_sensor_variance:
                 var += (spec.variance_high - base.sensor_variance) * level
-            if flags.network_degraded:
+            if flags.network_degraded or flags.vision_dropout:
                 loss += spec.packet_loss_pct * level
                 lat += spec.latency_ms * level
             if flags.memory_climbing:
@@ -458,7 +473,7 @@ class Simulator:
             else:
                 if incident_type is None:
                     incident_type = rng.choice(PREDEFINED_TYPES)
-                if incident_type not in PREDEFINED_TYPES:
+                if incident_type not in PREDEFINED_TYPES + SITE_KNOWLEDGE_TYPES:
                     raise SimulatorError("INVALID_TYPE", f"unknown incident type {incident_type!r}")
                 if machine is None:
                     machine = self._pick_machine(incident_type)
@@ -745,6 +760,19 @@ class Simulator:
         ticket. Ambiguous incidents are fixed outside the agent's action set."""
         fix = CORRECT_FIX[fault.spec.type]
         mid = fault.spec.machine_id
+        gw = MACHINES[mid].gateway
+        site_notes: dict[str, str] = {  # plant knowledge the signals alone don't reveal
+            "vision_link_dropout": (
+                f"traced the vision timeouts on {mid} to the camera's PoE port on the {gw} "
+                f"switch, which drops under load — a known issue on this line. Restarting "
+                f"gateway {gw} re-powers the camera (replacement switch on order)"
+            ),
+            "servo_tuning_drift": (
+                f"found {mid}'s servo tuning table out of sync after the nightly firmware "
+                f"check: the controller keeps a stale cached copy until a cold restart. "
+                f"Restarted the controller ({mid}); rollback and recalibration don't help"
+            ),
+        }
         notes: dict[str, str] = {
             "ROLLBACK_CONFIG": f"rolled back the latest config deploy on {mid}",
             "RECALIBRATE_SENSOR": f"recalibrated the sensors on {mid}; readings were drifting",
@@ -753,6 +781,8 @@ class Simulator:
         }
         if fix == "ESCALATE_HUMAN":
             action, note = None, f"replaced a failing controller I/O module on {mid}"
+        elif fault.spec.type in site_notes:
+            action, note = fix, site_notes[fault.spec.type]
         else:
             action, note = fix, notes[fix]
         self._conn.execute(

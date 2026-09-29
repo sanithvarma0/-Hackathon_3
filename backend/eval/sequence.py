@@ -11,6 +11,10 @@ identical incidents in the identical order (paired design):
 - Quiet time between incidents (2–12 sim-hours) keeps the plant's recent history realistic:
   sometimes the previous incident's events are still within the agent's look-back windows.
 - Every incident carries its own spec seed (identical signature, magnitude, timing, wording).
+
+Two batteries. `textbook`: the four classes whose fix follows from the evidence — the control
+where memory must not hurt. `full` adds the two site-knowledge classes, whose fix is known only
+from a past resolution (an engineer's fix): that is where memory has something to teach.
 """
 
 import random
@@ -18,12 +22,24 @@ from dataclasses import dataclass
 
 from backend.schemas import IncidentType
 
-CLASSES: tuple[IncidentType, ...] = (
+TEXTBOOK: tuple[IncidentType, ...] = (
     "config_regression",
     "sensor_drift",
     "network_failure",
     "resource_exhaustion",
 )
+SITE_KNOWLEDGE: tuple[IncidentType, ...] = ("vision_link_dropout", "servo_tuning_drift")
+CLASSES = TEXTBOOK  # backwards-compatible name
+BATTERIES: dict[str, tuple[IncidentType, ...]] = {
+    "textbook": TEXTBOOK,
+    "full": (*TEXTBOOK, *SITE_KNOWLEDGE),
+}
+
+
+def family(incident_type: str) -> str:
+    return "site_knowledge" if incident_type in SITE_KNOWLEDGE else "textbook"
+
+
 TRAIN_MACHINES = ("M1", "M2", "M3")
 HELD_OUT_MACHINES = ("M4", "M5")
 TRAIN_EXPOSURES = 2  # exposures 1-2 on M1-M3, 3+ on M4-M5
@@ -42,17 +58,19 @@ class Planned:
     after_config_regression: bool  # sensor drift right after a config regression (probe)
 
 
-def build_sequence(seed: int, n: int = 24) -> list[Planned]:
-    if n % len(CLASSES):
-        raise ValueError(f"n must be a multiple of {len(CLASSES)}")
+def build_sequence(seed: int, n: int = 24, battery: str = "textbook") -> list[Planned]:
+    classes = BATTERIES[battery]
+    if n % len(classes):
+        raise ValueError(f"n must be a multiple of {len(classes)} for the {battery} battery")
     rng = random.Random(f"memoryops-eval-sequence-{seed}")
     order: list[IncidentType] = []
-    for _ in range(n // len(CLASSES)):
+    for _ in range(n // len(classes)):
         while True:
             blocks: list[list[IncidentType]] = [
                 ["config_regression", "sensor_drift"],
                 ["network_failure"],
                 ["resource_exhaustion"],
+                *([c] for c in classes if c in SITE_KNOWLEDGE),
             ]
             rng.shuffle(blocks)
             flat = [c for block in blocks for c in block]

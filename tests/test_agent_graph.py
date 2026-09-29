@@ -312,3 +312,68 @@ async def test_the_agent_learns_what_the_engineer_did_after_an_escalation():
     assert "final fix=RECALIBRATE_SENSOR" in groq.decide_prompts()[0]
     assert r2.state["final"]["status"] == "resolved"
     assert r2.state["final"]["mttr_sim_s"] < r1.state["final"]["mttr_sim_s"]
+
+
+# ---- memory during the investigation --------------------------------------------------------
+
+
+def _system_and_tools(groq: ScriptedGroq) -> tuple[str, list[str]]:
+    first = groq.requests[0]
+    return first["messages"][0]["content"], [t["function"]["name"] for t in first["tools"]]
+
+
+async def test_memory_tool_is_offered_and_used_only_with_memory_on():
+    world = World()
+    memory = FakeMemory()
+    calls = [
+        ("get_machine_metrics", {"machine_id": "M3"}),
+        ("recall_similar_incidents", {"observations": "gradual output loss after a config deploy"}),
+        ("get_recent_events", {"machine_id": "M3", "window_minutes": 60}),
+    ]
+    # A past episode to find.
+    warm = Harness(world, ScriptedGroq("M3", [decision_json("ROLLBACK_CONFIG")]), memory)
+    await AgentRunner(warm.deps).start(incident(world), memory_enabled=True, approval="auto")
+    world.advance(3_600)
+
+    groq = ScriptedGroq("M3", [decision_json("ROLLBACK_CONFIG")], tool_calls=calls)
+    h = Harness(world, groq, memory)
+    result = await AgentRunner(h.deps).start(incident(world), memory_enabled=True, approval="auto")
+    system, tools = _system_and_tools(groq)
+    assert "recall_similar_incidents" in tools and "incident memory" in system
+    final = result.state["final"]
+    assert final["memory_tool_calls"] == 1 and final["tool_calls"] == 3  # counted like any call
+    recall_result = next(
+        d
+        for k, _, d in h.events
+        if k == "tool_result" and d["tool_name"] == "recall_similar_incidents"
+    )
+    assert recall_result["ok"] and "INC-001" in recall_result["result"]
+    assert "verify" in recall_result["result"]  # framed as a hypothesis to confirm
+    stages = [d.get("stage") for k, _, d in h.events if k == "memory_results"]
+    assert stages[0] == "investigate"
+
+
+async def test_memory_off_offers_no_memory_tool_and_mentions_none():
+    world = World()
+    calls = [("recall_similar_incidents", {"observations": "gradual output loss after a deploy"})]
+    groq = ScriptedGroq("M3", [decision_json("ROLLBACK_CONFIG")], tool_calls=calls)
+    h = Harness(world, groq, FakeMemory())
+    result = await AgentRunner(h.deps).start(incident(world), memory_enabled=False, approval="auto")
+    system, tools = _system_and_tools(groq)
+    assert "recall_similar_incidents" not in tools
+    assert "incident memory" not in system and "recall_similar_incidents" not in system
+    # A model that invents the tool anyway gets an error, never memory.
+    res = next(d for k, _, d in h.events if k == "tool_result")
+    assert not res["ok"] and "unknown tool" in res["result"]
+    assert h.memory.recalls == []
+    assert result.state["final"]["memory_tool_calls"] == 0
+
+
+async def test_memory_tool_rejects_empty_observations():
+    world = World()
+    calls = [("recall_similar_incidents", {"observations": "?"})]
+    groq = ScriptedGroq("M3", [decision_json("ROLLBACK_CONFIG")], tool_calls=calls)
+    h = Harness(world, groq, FakeMemory())
+    await AgentRunner(h.deps).start(incident(world), memory_enabled=True, approval="auto")
+    res = next(d for k, _, d in h.events if k == "tool_result")
+    assert not res["ok"] and "invalid arguments" in res["result"]

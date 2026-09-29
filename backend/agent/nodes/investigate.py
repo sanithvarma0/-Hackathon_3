@@ -6,12 +6,22 @@ from backend.agent import prompts
 from backend.agent.deps import AgentDeps
 from backend.agent.models import InvestigationSummary
 from backend.agent.state import AgentState
-from backend.agent.tools import run_tool, tool_specs
+from backend.agent.tools import (
+    MEMORY_TOOL,
+    ToolResult,
+    memory_tool_spec,
+    parse_recall_args,
+    render_recall,
+    run_tool,
+    tool_specs,
+)
 from backend.guardrails import GuardrailViolation, ToolBudget, parse_model
 from backend.llm import LLMResponse, LLMUnavailable
+from backend.memory.render import paraphrase
 from backend.schemas import Alert
 
 TOOLS = tool_specs()
+TOOLS_WITH_MEMORY = [*TOOLS, memory_tool_spec()]
 
 
 def _assistant_message(resp: LLMResponse, ids: list[str]) -> dict[str, Any]:
@@ -34,10 +44,16 @@ async def investigate(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
     attempt = state.get("attempt_count", 0) + 1
     alert = Alert.model_validate(state["alert"])
     deps.emit("investigation_start", incident_id, {"attempt": attempt})
+    # Memory OFF: no memory tool and no mention of it, so nothing can leak in (6.4).
+    memory_on = bool(state["memory_enabled"]) and deps.memory is not None
+    tools = TOOLS_WITH_MEMORY if memory_on else TOOLS
     messages: list[dict[str, Any]] = [
         {
             "role": "system",
-            "content": prompts.INVESTIGATE_SYSTEM.format(max_tool_calls=deps.max_tool_calls),
+            "content": prompts.INVESTIGATE_SYSTEM.format(
+                max_tool_calls=deps.max_tool_calls,
+                memory_block=prompts.INVESTIGATE_MEMORY_BLOCK if memory_on else "",
+            ),
         },
         {
             "role": "user",
@@ -63,7 +79,7 @@ async def investigate(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                     )
                     final = await deps.llm.chat(messages, json_mode=True, name="investigate:force")
                     break
-                resp = await deps.llm.chat(messages, tools=TOOLS, name="investigate")
+                resp = await deps.llm.chat(messages, tools=tools, name="investigate")
                 if not resp.tool_calls:
                     final = resp
                     break
@@ -81,7 +97,10 @@ async def investigate(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                             {"step": step_no, "tool_name": tc.name, "args": tc.arguments},
                         )
                         with deps.tracer.span(tc.name, as_type="tool", input=tc.arguments) as t:
-                            result = run_tool(deps.adapter, tc.name, tc.arguments)
+                            if memory_on and tc.name == MEMORY_TOOL:
+                                result = await _recall(deps, incident_id, tc.arguments)
+                            else:
+                                result = run_tool(deps.adapter, tc.name, tc.arguments)
                             t.update(output=result.text)
                         call = f"{tc.name}({', '.join(f'{v}' for v in result.args.values())})"
                         steps.append(
@@ -151,3 +170,40 @@ async def _parse_summary(
             return parse_model(InvestigationSummary, retry.content)
         except GuardrailViolation:
             return InvestigationSummary(summary=(text or retry.content or "")[:1000])
+
+
+async def _recall(deps: AgentDeps, incident_id: str, raw_args: str | None) -> ToolResult:
+    """The memory tool: same match gate as search_memory, results framed as hypotheses."""
+    assert deps.memory is not None
+    args = parse_recall_args(raw_args)
+    if isinstance(args, str):
+        return ToolResult(name=MEMORY_TOOL, args={}, ok=False, text=args)
+    query = paraphrase(args.observations) or args.observations
+    deps.emit("memory_search", incident_id, {"query": query, "stage": "investigate"})
+    try:
+        recall = await deps.memory.recall(query, exclude_incident=incident_id)
+    except Exception as e:  # memory down: the investigation carries on from evidence
+        deps.emit("error", incident_id, {"code": "MEMORY_UNAVAILABLE", "message": str(e)})
+        return ToolResult(
+            name=MEMORY_TOOL,
+            args={"observations": args.observations},
+            ok=False,
+            text="Memory is unavailable right now. Continue from evidence.",
+        )
+    matches = [m.model_dump() for m in recall.matches]
+    deps.emit(
+        "memory_results",
+        incident_id,
+        {
+            "query": query,
+            "matches": matches,
+            "learned_patterns": list(recall.learned_patterns),
+            "stage": "investigate",
+        },
+    )
+    return ToolResult(
+        name=MEMORY_TOOL,
+        args={"observations": args.observations},
+        ok=True,
+        text=render_recall(matches, list(recall.learned_patterns)),
+    )

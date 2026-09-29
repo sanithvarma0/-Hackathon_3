@@ -35,3 +35,21 @@ def test_quick_run_still_covers_transfer():
 def test_sequence_length_must_cover_every_class_equally():
     with pytest.raises(ValueError):
         build_sequence(0, 10)
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_full_battery_adds_site_knowledge_classes(seed):
+    from backend.eval.sequence import SITE_KNOWLEDGE, family
+
+    seq = build_sequence(seed, 24, battery="full")
+    counts = Counter(p.type for p in seq)
+    assert set(counts) == {*CLASSES, *SITE_KNOWLEDGE} and set(counts.values()) == {4}
+    types = [p.type for p in seq]
+    assert all(a != b for a, b in zip(types, types[1:], strict=False))
+    assert sum(p.after_config_regression for p in seq) == 4
+    assert {family(t) for t in SITE_KNOWLEDGE} == {"site_knowledge"}
+    assert family("config_regression") == "textbook"
+
+
+def test_textbook_battery_is_the_default_and_unchanged():
+    assert build_sequence(3, 24) == build_sequence(3, 24, battery="textbook")

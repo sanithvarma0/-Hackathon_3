@@ -4,7 +4,14 @@ import time
 
 import pytest
 
-from backend.schemas import ACTIONS, PREDEFINED_TYPES, CustomIncidentSpec, Effect, IncidentType
+from backend.schemas import (
+    ACTIONS,
+    PREDEFINED_TYPES,
+    SITE_KNOWLEDGE_TYPES,
+    CustomIncidentSpec,
+    Effect,
+    IncidentType,
+)
 from backend.simulator import ManualClock, RealtimeClock, Simulator, SimulatorError
 from backend.simulator.db import connect
 from backend.simulator.engine import HEALTHY_RATIO
@@ -13,7 +20,7 @@ from backend.simulator.machines import GATEWAYS, LINE, MACHINES, downstream
 from tests.conftest import World
 
 VERIFY_WINDOW = 180
-FULLY_DEGRADED_S = 700  # longest onset ramp (600 s) plus margin
+FULLY_DEGRADED_S = 1300  # longest onset ramp (1200 s, servo tuning drift) plus margin
 
 AMBIGUOUS = CustomIncidentSpec(machine="M1", throughput_delta=-30)
 
@@ -101,7 +108,10 @@ def test_same_seed_same_world():
 
 
 MATRIX = [
-    (t, a) for t in (*PREDEFINED_TYPES, "ambiguous") for a in ACTIONS if a != "ESCALATE_HUMAN"
+    (t, a)
+    for t in (*PREDEFINED_TYPES, *SITE_KNOWLEDGE_TYPES, "ambiguous")
+    for a in ACTIONS
+    if a != "ESCALATE_HUMAN"
 ]
 
 
@@ -417,3 +427,58 @@ def test_spec_seed_makes_an_incident_identical_whatever_came_before():
     # Background jitter is a smoothed random process that carries its state from before the
     # incident, so readings may differ in the second decimal — never in shape or magnitude.
     assert max(abs(x - y) for x, y in zip(a[2], b[2], strict=True)) < 0.1
+
+
+# ---- site knowledge: the fix is not in the signals ----------------------------------------
+
+
+def test_vision_dropout_is_local_and_subtle(world: World):
+    incident = world.sim.trigger_incident("vision_link_dropout", "M2", spec_seed=3)
+    assert incident.affected == ("M2",)  # not the whole gateway, unlike a network failure
+    world.advance(FULLY_DEGRADED_S)
+    m2 = world.adapter.get_machine_metrics("M2")
+    assert 0.4 < m2.packet_loss_pct < 2.0  # elevated, but below the NET / gateway thresholds
+    assert all(world.adapter.get_machine_metrics(m).status == "healthy" for m in ("M1", "M5"))
+    logs = " ".join(world.adapter.get_error_logs("M2", 30))
+    assert "vision" in logs or "no-read" in logs
+
+
+def test_servo_drift_logs_following_errors_and_has_no_deploy(world: World):
+    incident = world.sim.trigger_incident("servo_tuning_drift", "M4", spec_seed=5)
+    world.advance(FULLY_DEGRADED_S)
+    logs = " ".join(world.adapter.get_error_logs("M4", 60))
+    assert "following error" in logs or "settling time" in logs or "tuning table" in logs
+    kinds = {e.event_type for e in world.adapter.get_recent_events("M4", 360)}
+    assert "config_deployed" not in kinds or all(
+        e.ts < incident.onset_ts - 6 * 3600
+        for e in world.adapter.get_recent_events("M4", 360)
+        if e.event_type == "config_deployed"
+    )
+
+
+def test_every_controller_runs_a_nightly_firmware_check(world: World):
+    for mid in ("M1", "M2", "M3", "M4", "M5"):
+        checks = [
+            e
+            for e in world.sim.get_recent_events(mid, 7 * 24 * 60)
+            if e.event_type == "firmware_check"
+        ]
+        assert len(checks) >= 6  # routine: never a giveaway on its own
+    world.advance(86_400)
+    assert any(e.event_type == "firmware_check" for e in world.sim.get_recent_events("M1", 24 * 60))
+
+
+@pytest.mark.parametrize(
+    ("incident_type", "fix", "words"),
+    [
+        ("vision_link_dropout", "RESTART_GATEWAY", "PoE port"),
+        ("servo_tuning_drift", "RESTART_MACHINE", "cold restart"),
+    ],
+)
+def test_escalated_site_incidents_carry_the_engineers_knowledge(incident_type, fix, words):
+    world = World()
+    incident = world.sim.trigger_incident(incident_type, "M1")
+    world.advance(400)
+    world.adapter.execute_action(incident.id, "ESCALATE_HUMAN")
+    closed = world.sim.get_incident(incident.id)
+    assert closed.engineer_action == fix and words in (closed.engineer_note or "")

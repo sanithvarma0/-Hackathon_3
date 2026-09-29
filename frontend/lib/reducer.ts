@@ -357,9 +357,13 @@ export function applyEvent(state: UIState, e: BusEvent): UIState {
     case "tool_call": {
       const args = parseArgs(d.args);
       const machine = typeof args.machine_id === "string" ? args.machine_id : null;
+      // The agent asking memory mid-investigation is memory at work: purple, not a plain tool.
+      const recall = d.tool_name === "recall_similar_incidents";
       run = pushTrace(
         { ...run, toolCalls: run.toolCalls + 1, focusMachine: machine ?? run.focusMachine },
-        { ts: e.ts, kind: "tool", text: formatToolCall(str(d.tool_name), args) },
+        recall
+          ? { ts: e.ts, kind: "memory", text: "recall_similar_incidents · asking memory mid-investigation" }
+          : { ts: e.ts, kind: "tool", text: formatToolCall(str(d.tool_name), args) },
         e.id,
       );
       break;
@@ -368,7 +372,8 @@ export function applyEvent(state: UIState, e: BusEvent): UIState {
       // Attach to the matching call line as its collapsible body.
       const trace = [...run.trace];
       for (let i = trace.length - 1; i >= 0; i--) {
-        if (trace[i].kind === "tool" && trace[i].detail === undefined) {
+        const isCall = trace[i].kind === "tool" || trace[i].text.startsWith("recall_similar_incidents");
+        if (isCall && trace[i].detail === undefined) {
           trace[i] = { ...trace[i], detail: str(d.result), ok: d.ok !== false };
           break;
         }

@@ -150,6 +150,11 @@ async def learn(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             "first_attempt_tool_calls": sum(
                 1 for s in state.get("all_steps", []) if s["attempt"] == 1
             ),
+            "memory_tool_calls": sum(
+                1
+                for s in state.get("all_steps", [])
+                if s["tool"] == "recall_similar_incidents" and s["ok"]
+            ),
             "investigation_efficiency": round(decisive / len(last_steps), 3) if last_steps else 0.0,
             "first_action_recommended": first["action"],
             "diagnosis": first.get("diagnosis"),

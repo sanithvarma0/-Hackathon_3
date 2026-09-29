@@ -1,7 +1,8 @@
 "use client";
 
 import { Bar, BarChart, CartesianGrid, ErrorBar, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { EvalBucket, EvalEstimate, EvalLatest, EvalMetric } from "@/lib/types";
+import { useState } from "react";
+import type { EvalBucket, EvalEstimate, EvalExposureTable, EvalLatest, EvalMetric } from "@/lib/types";
 
 const ON = "#a371f7";
 const OFF = "#6e7681";
@@ -26,9 +27,9 @@ interface Point {
 
 const err = (e: EvalEstimate | null): [number, number] => (e ? [e.mean - e.lo, e.hi - e.mean] : [0, 0]);
 
-function points(report: EvalLatest, metric: EvalMetric, scale = 1): Point[] {
+function points(table: EvalExposureTable, metric: EvalMetric, scale = 1): Point[] {
   return BUCKETS.map((b) => {
-    const cell = report.summary.by_exposure[metric][b];
+    const cell = table[metric]?.[b] ?? { memory_on: null, memory_off: null, diff: null };
     const s = (e: EvalEstimate | null) => (e ? { mean: e.mean * scale, lo: e.lo * scale, hi: e.hi * scale, n: e.n } : null);
     const on = s(cell.memory_on);
     const off = s(cell.memory_off);
@@ -105,10 +106,25 @@ function MetricChart({
   );
 }
 
+type Family = "all" | "textbook" | "site_knowledge";
+const FAMILY_TITLE: Record<Family, string> = {
+  all: "All incidents",
+  textbook: "Textbook",
+  site_knowledge: "Site knowledge",
+};
+const FAMILY_HINT: Record<Family, string> = {
+  all: "",
+  textbook: "The fix follows from the evidence: memory must not hurt.",
+  site_knowledge: "The fix is known only from a past resolution: memory has something to teach.",
+};
+
 export default function EvalReport({ report }: { report: EvalLatest }) {
   const s = report.summary;
   const m = report.metadata;
   const pct = (v: number) => `${Math.round(v * 100)}%`;
+  const families = (["all", "textbook", "site_knowledge"] as Family[]).filter((f) => f === "all" || s.by_family?.[f]);
+  const [fam, setFam] = useState<Family>(s.by_family?.site_knowledge ? "site_knowledge" : "all");
+  const table = fam === "all" ? s.by_exposure : (s.by_family?.[fam]?.by_exposure ?? s.by_exposure);
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex items-start justify-between gap-4">
@@ -119,7 +135,7 @@ export default function EvalReport({ report }: { report: EvalLatest }) {
         </p>
       </div>
 
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-3 gap-2 xl:grid-cols-6">
         {s.targets.map((t) => {
           const st = STATUS_STYLE[t.status];
           return (
@@ -137,10 +153,29 @@ export default function EvalReport({ report }: { report: EvalLatest }) {
         })}
       </div>
 
+      {families.length > 1 && (
+        <div className="flex items-center gap-3">
+          <div className="flex rounded-md border border-border p-0.5" role="tablist" aria-label="Incident family">
+            {families.map((f) => (
+              <button
+                key={f}
+                role="tab"
+                aria-selected={fam === f}
+                onClick={() => setFam(f)}
+                className={`whitespace-nowrap rounded px-3 py-1 font-mono text-xs ${fam === f ? "bg-panel-2 text-text" : "text-muted hover:text-text"}`}
+              >
+                {FAMILY_TITLE[f]}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-muted">{FAMILY_HINT[fam]}</span>
+        </div>
+      )}
+
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-3">
-        <MetricChart title="FIRST RECOMMENDATION CORRECT" unit="by times this class had been seen" data={points(report, "accuracy")} fmt={pct} />
-        <MetricChart title="MTTR (SIM MINUTES)" unit="lower is better" data={points(report, "mttr_min")} fmt={(v) => v.toFixed(1)} />
-        <MetricChart title="TOOL CALLS" unit="all attempts, lower is better" data={points(report, "tool_calls")} fmt={(v) => v.toFixed(1)} />
+        <MetricChart title="FIRST RECOMMENDATION CORRECT" unit="by times this class had been seen" data={points(table, "accuracy")} fmt={pct} />
+        <MetricChart title="MTTR (SIM MINUTES)" unit="lower is better" data={points(table, "mttr_min")} fmt={(v) => v.toFixed(1)} />
+        <MetricChart title="TOOL CALLS" unit="all attempts, lower is better" data={points(table, "tool_calls")} fmt={(v) => v.toFixed(1)} />
       </div>
 
       <div className="grid grid-cols-3 gap-3 font-mono text-[12px]">

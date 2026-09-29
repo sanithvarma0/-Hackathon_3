@@ -208,7 +208,8 @@ export interface EvalEstimate {
 }
 
 export type EvalBucket = "1st" | "2nd" | "3rd+";
-export type EvalMetric = "accuracy" | "mttr_min" | "tool_calls" | "first_attempt_tool_calls" | "confidence";
+export type EvalMetric = "accuracy" | "safe" | "mttr_min" | "tool_calls" | "first_attempt_tool_calls" | "confidence";
+export type EvalExposureTable = Record<EvalMetric, Record<EvalBucket, { memory_on: EvalEstimate | null; memory_off: EvalEstimate | null; diff: EvalEstimate | null }>>;
 
 export interface EvalTarget {
   id: string;
@@ -221,7 +222,9 @@ export interface EvalSummary {
   rows: number;
   errors: number;
   seeds: number[];
-  by_exposure: Record<EvalMetric, Record<EvalBucket, { memory_on: EvalEstimate | null; memory_off: EvalEstimate | null; diff: EvalEstimate | null }>>;
+  by_exposure: EvalExposureTable;
+  by_family?: Partial<Record<"textbook" | "site_knowledge", { n: Record<string, number>; by_exposure: EvalExposureTable }>>;
+  memory_tool?: { incidents_using_it: number; n: number; mean_calls: number | null };
   targets: EvalTarget[];
   discrimination: Record<"memory_on" | "memory_off", { probes: { k: number; n: number } }>;
   retrieval: { recall_at_1: EvalEstimate | null; strong_precision: EvalEstimate | null };
